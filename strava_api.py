@@ -242,6 +242,9 @@ def do_the_thing():
 				print("Importing ",activity.name, activity.start_date)
 				activity = client.get_activity(activity.id)
 
+				# Reset imageUrls for each new activity
+				run_template["workout"]["imageUrls"] = []
+
 				run_template["workout"]["name"] = activity.name
 
 				# Pulls data from the constants table
@@ -254,13 +257,31 @@ def do_the_thing():
 				run_template["workout"]["exercises"][0]["sets"][0]["distance"] = int(activity.distance)
 
 				if activity.description:
-					run_template["workout"]["description"] = str(activity.description) + "\n\n"+run_template["workout"]["description"]			
-			
+					run_template["workout"]["description"] = str(activity.description) + "\n\n"+run_template["workout"]["description"]
+
 				if activity.average_heartrate:
 					run_template["workout"]["exercises"][0]["notes"] = "Heartrate Avg: " + str(activity.average_heartrate) + "bpm, Max: " + str(activity.max_heartrate) + "bpm."
 
 				if activity.average_watts:
 					run_template["workout"]["exercises"][0]["notes"] += "\nPower Avg: " + str(activity.average_watts) + "W, Max: " + str(activity.max_watts) + "W."
+
+				# Fetch photos from the activity
+				try:
+					photos = client.get_activity_photos(activity.id, size=5000)
+					photo_urls = []
+					for photo in photos:
+						# Get the largest available photo URL
+						if hasattr(photo, 'urls') and photo.urls:
+							# URLs dict typically has keys like '100', '600', '1000' etc for different sizes
+							# Get the largest size available
+							max_size_key = max(photo.urls.keys(), key=lambda x: int(x) if x.isdigit() else 0)
+							photo_urls.append(photo.urls[max_size_key])
+
+					if photo_urls:
+						run_template["workout"]["imageUrls"] = photo_urls
+						print(f"Found {len(photo_urls)} photo(s) to import")
+				except Exception as e:
+					print(f"Could not fetch photos: {e}")
 
 				do_submit = True 
 			
