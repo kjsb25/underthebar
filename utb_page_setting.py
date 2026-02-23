@@ -13,6 +13,7 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
+    QLineEdit,
     QPushButton,
     QHBoxLayout,
     QVBoxLayout,
@@ -23,7 +24,9 @@ from PySide6.QtGui import QPalette, QColor
 from PySide6.QtGui import QIcon, QPixmap, QPainter
 from PySide6.QtCore import Slot, Signal, QObject, QThreadPool, QRunnable
 
-import hevy_api	
+from dotenv import load_dotenv, set_key
+
+import hevy_api
 import strava_api
 import utb_prs
 
@@ -157,6 +160,38 @@ class Setting(QWidget):
 		workoutsyncgrid.addWidget(self.stravaimportstateLabel,3,2)
 		
 		
+		# Strava credentials editor
+		self.env_path = os.path.join(self.script_folder, ".env")
+		load_dotenv(self.env_path)
+		strava_creds_label = QLabel("\nStrava API Credentials")
+		detailslayout.addWidget(strava_creds_label)
+		stravacredsgrid = QGridLayout()
+
+		strava_id_label = QLabel("Client ID")
+		strava_id_label.setFixedWidth(200)
+		stravacredsgrid.addWidget(strava_id_label, 0, 0)
+		self.stravaClientIdField = QLineEdit()
+		self.stravaClientIdField.setText(os.environ.get("STRAVA_CLIENT_ID", ""))
+		self.stravaClientIdField.setPlaceholderText("Strava Client ID")
+		stravacredsgrid.addWidget(self.stravaClientIdField, 0, 1)
+
+		strava_secret_label = QLabel("Client Secret")
+		strava_secret_label.setFixedWidth(200)
+		stravacredsgrid.addWidget(strava_secret_label, 1, 0)
+		self.stravaClientSecretField = QLineEdit()
+		self.stravaClientSecretField.setText(os.environ.get("STRAVA_CLIENT_SECRET", ""))
+		self.stravaClientSecretField.setPlaceholderText("Strava Client Secret")
+		stravacredsgrid.addWidget(self.stravaClientSecretField, 1, 1)
+
+		self.stravaCredsStatusLabel = QLabel()
+		stravacredsgrid.addWidget(self.stravaCredsStatusLabel, 2, 1)
+
+		strava_save_btn = QPushButton("Save")
+		strava_save_btn.clicked.connect(self.save_strava_credentials)
+		stravacredsgrid.addWidget(strava_save_btn, 2, 0)
+
+		detailslayout.addLayout(stravacredsgrid)
+
 		# Log out and quit button
 		log_out_label = QLabel("Logout and Quit")
 		log_out_label.setFixedWidth(200)
@@ -180,6 +215,15 @@ class Setting(QWidget):
 		print("Quitting...")
 		hevy_api.logout()
 		sys.exit()
+
+	def save_strava_credentials(self):
+		cl_id = self.stravaClientIdField.text().strip()
+		cl_secret = self.stravaClientSecretField.text().strip()
+		set_key(self.env_path, "STRAVA_CLIENT_ID", cl_id)
+		set_key(self.env_path, "STRAVA_CLIENT_SECRET", cl_secret)
+		os.environ["STRAVA_CLIENT_ID"] = cl_id
+		os.environ["STRAVA_CLIENT_SECRET"] = cl_secret
+		self.stravaCredsStatusLabel.setText("Saved")
 	
 	def update_button_pushed(self, button_id):
 	
