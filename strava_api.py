@@ -12,6 +12,7 @@ import webbrowser
 import uuid
 import random
 import copy
+from dotenv import load_dotenv
 
 class Server(socketserver.TCPServer):
 
@@ -55,15 +56,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
 def do_the_thing():
 	print("starting strava_api > do_the_thing()")
 
-	#
-	# THIS IS WHERE YOU ADD THE STRAVA API DETAILS
-	#
-	cl_id = None   # put you strava api client id here
-	cl_secret = None  # put your strava api client secret here
-	
-	
-	if cl_id == None or cl_secret == None:
-		print("NEED TO ADD YOUR STRAVA API DETAILS TO strava_api.py !!!\n"*5)
+	# Load Strava API credentials from .env file
+	script_folder = os.path.split(os.path.abspath(__file__))[0]
+	load_dotenv(os.path.join(script_folder, ".env"))
+	cl_id = os.environ.get("STRAVA_CLIENT_ID")
+	cl_secret = os.environ.get("STRAVA_CLIENT_SECRET")
+
+	if not cl_id or not cl_secret:
+		print("NEED TO ADD YOUR STRAVA API DETAILS TO .env !!!\n"*5)
 		return 404
 
 	get_token_url = False
