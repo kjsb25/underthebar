@@ -13,6 +13,7 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
+    QLineEdit,
     QPushButton,
     QHBoxLayout,
     QVBoxLayout,
@@ -23,7 +24,9 @@ from PySide6.QtGui import QPalette, QColor
 from PySide6.QtGui import QIcon, QPixmap, QPainter
 from PySide6.QtCore import Slot, Signal, QObject, QThreadPool, QRunnable
 
-import hevy_api	
+from dotenv import load_dotenv, set_key
+
+import hevy_api
 import strava_api
 import utb_prs
 
@@ -157,6 +160,44 @@ class Setting(QWidget):
 		workoutsyncgrid.addWidget(self.stravaimportstateLabel,3,2)
 		
 		
+		# Strava credentials editor
+		self.env_path = os.path.join(self.script_folder, ".env")
+		load_dotenv(self.env_path, override=True)
+		strava_creds_label = QLabel("\nStrava API Credentials")
+		detailslayout.addWidget(strava_creds_label)
+		stravacredsgrid = QGridLayout()
+
+		strava_id_label = QLabel("Client ID")
+		strava_id_label.setFixedWidth(200)
+		stravacredsgrid.addWidget(strava_id_label, 0, 0)
+		self.stravaClientIdField = QLineEdit()
+		self.stravaClientIdField.setText(os.environ.get("STRAVA_CLIENT_ID", ""))
+		self.stravaClientIdField.setPlaceholderText("Strava Client ID")
+		self.stravaClientIdField.setEchoMode(QLineEdit.Password)
+		stravacredsgrid.addWidget(self.stravaClientIdField, 0, 1)
+
+		strava_secret_label = QLabel("Client Secret")
+		strava_secret_label.setFixedWidth(200)
+		stravacredsgrid.addWidget(strava_secret_label, 1, 0)
+		self.stravaClientSecretField = QLineEdit()
+		self.stravaClientSecretField.setText(os.environ.get("STRAVA_CLIENT_SECRET", ""))
+		self.stravaClientSecretField.setPlaceholderText("Strava Client Secret")
+		self.stravaClientSecretField.setEchoMode(QLineEdit.Password)
+		stravacredsgrid.addWidget(self.stravaClientSecretField, 1, 1)
+
+		strava_save_btn = QPushButton("Save")
+		strava_save_btn.clicked.connect(self.save_strava_credentials)
+		stravacredsgrid.addWidget(strava_save_btn, 2, 0)
+
+		self.stravaTestBtn = QPushButton("Test Connection")
+		self.stravaTestBtn.clicked.connect(self.test_strava_connection)
+		stravacredsgrid.addWidget(self.stravaTestBtn, 2, 1)
+
+		self.stravaCredsStatusLabel = QLabel()
+		stravacredsgrid.addWidget(self.stravaCredsStatusLabel, 3, 0, 1, 2)
+
+		detailslayout.addLayout(stravacredsgrid)
+
 		# Log out and quit button
 		log_out_label = QLabel("Logout and Quit")
 		log_out_label.setFixedWidth(200)
@@ -180,6 +221,29 @@ class Setting(QWidget):
 		print("Quitting...")
 		hevy_api.logout()
 		sys.exit()
+
+	def save_strava_credentials(self):
+		cl_id = self.stravaClientIdField.text().strip()
+		cl_secret = self.stravaClientSecretField.text().strip()
+		set_key(self.env_path, "STRAVA_CLIENT_ID", cl_id)
+		set_key(self.env_path, "STRAVA_CLIENT_SECRET", cl_secret)
+		os.environ["STRAVA_CLIENT_ID"] = cl_id
+		os.environ["STRAVA_CLIENT_SECRET"] = cl_secret
+		self.stravaCredsStatusLabel.setText("Saved")
+
+	def test_strava_connection(self):
+		self.stravaTestBtn.setEnabled(False)
+		self.stravaCredsStatusLabel.setText("Testing...")
+		cl_id = self.stravaClientIdField.text().strip()
+		cl_secret = self.stravaClientSecretField.text().strip()
+		worker = StravaTestWorker(cl_id, cl_secret)
+		worker.emitter.done.connect(self.on_strava_test_done)
+		self.pool.start(worker)
+
+	@Slot(bool, str)
+	def on_strava_test_done(self, success, message):
+		self.stravaTestBtn.setEnabled(True)
+		self.stravaCredsStatusLabel.setText(message)
 	
 	def update_button_pushed(self, button_id):
 	
@@ -301,6 +365,38 @@ class Setting(QWidget):
 class MyEmitter(QObject):
 	# setting up custom signal
 	done = Signal(str,int,int)
+
+class StravaTestEmitter(QObject):
+	done = Signal(bool, str)
+
+class StravaTestWorker(QRunnable):
+
+	def __init__(self, cl_id, cl_secret):
+		super(StravaTestWorker, self).__init__()
+		self.cl_id = cl_id
+		self.cl_secret = cl_secret
+		self.emitter = StravaTestEmitter()
+
+	@Slot()
+	def run(self):
+		try:
+			import requests
+			if not self.cl_id or not self.cl_secret:
+				self.emitter.done.emit(False, "Missing credentials")
+				return
+			# POST to Strava token endpoint — valid credentials return 400 "unsupported_grant_type",
+			# invalid credentials return 401 "invalid_client"
+			resp = requests.post("https://www.strava.com/oauth/token", data={
+				"client_id": self.cl_id,
+				"client_secret": self.cl_secret,
+				"grant_type": "client_credentials",
+			})
+			if resp.status_code == 401:
+				self.emitter.done.emit(False, "Invalid client ID or secret")
+			else:
+				self.emitter.done.emit(True, "Credentials OK")
+		except Exception as e:
+			self.emitter.done.emit(False, "Error: " + str(e))
 
 class MyWorker(QRunnable):
 
