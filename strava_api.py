@@ -210,6 +210,7 @@ def import_activity(activity_id, enabled_types=None):
 		"title": "Running (import)",
 		"description": "(Import from Strava)",
 		"media": [],
+		"imageUrls": [],
 		"exercises": [
 		  {
 			"title": "Running",
@@ -294,6 +295,24 @@ def import_activity(activity_id, enabled_types=None):
 
 	if activity.average_watts:
 		run_template["workout"]["exercises"][0]["notes"] += "\nPower Avg: " + str(activity.average_watts) + "W, Max: " + str(activity.max_watts) + "W."
+
+	# Fetch photos from the activity
+	run_template["workout"]["imageUrls"] = []
+	try:
+		photos = client.get_activity_photos(activity_id, size=5000)
+		photo_urls = []
+		for photo in photos:
+			if hasattr(photo, 'urls') and photo.urls:
+				# urls dict has keys like '100', '600', '2000' for different sizes
+				max_size_key = max(photo.urls.keys(), key=lambda x: int(x) if x.isdigit() else 0)
+				photo_urls.append(photo.urls[max_size_key])
+		if photo_urls:
+			run_template["workout"]["imageUrls"] = photo_urls
+			print(f"Found {len(photo_urls)} photo(s) to import")
+		else:
+			print("No photos found for activity")
+	except Exception as e:
+		print(f"Could not fetch photos: {e}")
 
 	# Log in to Hevy and submit
 	import hevy_api
