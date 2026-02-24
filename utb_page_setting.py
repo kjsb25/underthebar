@@ -86,9 +86,13 @@ class Setting(QWidget):
 		# Inner widget that lives inside the scroll area
 		inner = QWidget()
 		scroll.setWidget(inner)
+		innerlayout = QHBoxLayout()
+		innerlayout.addStretch()
 		detailslayout = QVBoxLayout()
 		detailslayout.setAlignment(Qt.AlignTop)
-		inner.setLayout(detailslayout)
+		innerlayout.addLayout(detailslayout)
+		innerlayout.addStretch()
+		inner.setLayout(innerlayout)
 
 		# ── API data section ──────────────────────────────────────────────
 		detailsgrid = QGridLayout()
