@@ -209,10 +209,6 @@ class Login(QtWidgets.QDialog):
 		layout.addWidget(QtWidgets.QLabel('''<p align=center><u><font size="60">═|██══</font><font size="20">UNDER THE BAR</font><font size="60">══██|═</font></u><br><font size="2">powered by Hevy</font></p>'''))
 		layout.addWidget(QtWidgets.QLabel('''<p align=center>To use Under The Bar you first need to log in to Hevy.</p> <p align=center>Enter your username and password below.</p><p> </p><p> </p>'''))
 		layout.addWidget(self.logo)
-		layout.addWidget(QtWidgets.QLabel('''<p align=center>Temporary work-around. Obtain values from Hevy web app login cookie.</p>'''))
-		layout.addWidget(QtWidgets.QLabel('''<p align=center>Obtain by logging in to web app and using browser dev tools. </p>'''))
-		layout.addWidget(QtWidgets.QLabel('''<p align=center>Can find in Hevy cookie "auth2.0-token"</p> '''))
-		layout.addWidget(QtWidgets.QLabel('''<p align=center>Replace username with value for "access_token", password with value of "refresh_token"</p> <p> </p><p> </p>'''))
 		layout.addWidget(self.textName)
 		layout.addWidget(self.textPass)
 		layout.addWidget(self.buttonLogin)
@@ -225,8 +221,7 @@ class Login(QtWidgets.QDialog):
 		password = self.textPass.text()
 		self.buttonLogin.setIcon(self.loadIcon(self.script_folder+"/icons/spinner-solid.svg"))
 		self.buttonLogin.repaint()
-		#logged_in = hevy_api.login(username,password) # Work around necessary for Hevy API authorisation changes
-		logged_in = hevy_api.temp_login(username,password)
+		logged_in = hevy_api.login(username,password)
 		if logged_in ==200:
 			self.accept()
 		else:
