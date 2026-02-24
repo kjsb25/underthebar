@@ -191,8 +191,7 @@ def login_cli():
 # Login method taking a username and password
 # Logs in and then downloads account.json, the profile pic, and the workout_count
 # Returns 200 if all successful
-# Currently broken due to Hevy API changes
-#	
+#
 def login(user, password):
 	home_folder = str(Path.home())
 	utb_folder = home_folder + "/.underthebar"
@@ -202,70 +201,74 @@ def login(user, password):
 		os.makedirs(utb_folder+"/temp")
 
 	headers = BASIC_HEADERS.copy()
-	
+
 	# Post username and password to Hevy
 	s = requests.Session()
-	
-	print(headers)
-	#return 101
+
 	r = s.post('https://api.hevyapp.com/login', data=json.dumps({'emailOrUsername':user,'password':password}), headers=headers)
-	print(r.status_code, r.request.headers, r.request.body)
-	
+	print(r.status_code)
+
 	if r.status_code == 200:
 		json_content = r.json()
-		print(json.dumps(indent=2))
-		return r.status_code
-		
-		s.headers.update({'auth-token': json_content['auth_token']})
-		
-		auth_token = json_content['auth_token']
-	
+		print(json.dumps(json_content, indent=2))
+
+		# Hevy now returns access_token/refresh_token from /login (same format as /auth/refresh_token)
+		if "access_token" in json_content:
+			access_token = json_content["access_token"]
+			access_token_expiry = json_content["expires_at"]
+			refresh_token = json_content["refresh_token"]
+		else:
+			# Legacy auth_token format - use it as the access_token to obtain proper tokens
+			access_token = json_content["auth_token"]
+			access_token_expiry = ""
+			refresh_token = ""
+
+		s.headers.update({'Authorization': "Bearer " + access_token})
+
 		r = s.get("https://api.hevyapp.com/account", headers=headers)
 		if r.status_code == 200:
 			data = r.json()
-			
+
 			account_data = {"data":data, "Etag":r.headers['Etag']}
-			#print(json.dumps(r.json(), indent=4, sort_keys=True))
-			
+
 			user_id = data["id"]
-			
+
 			user_folder = utb_folder + "/user_"+user_id
-	
+
 			if not os.path.exists(user_folder):
 				os.makedirs(user_folder)
 				os.makedirs(user_folder+"/workouts")
 				os.makedirs(user_folder+"/routines")
-			
+
 			with open(utb_folder+"/session.json", 'w') as f:
-				json.dump({"auth-token":auth_token,"user-id":user_id},f)
-			
+				json.dump({"access_token":access_token, "expires_at":access_token_expiry, "refresh_token":refresh_token, "user-id":user_id},f)
+
 			with open(user_folder+"/account.json", 'w') as f:
 				json.dump(account_data, f)
-			
+
 			if "profile_pic" in data:
 				imageurl = data["profile_pic"]
 				response = requests.get(imageurl, stream=True)
 				if response.status_code == 200:
 					with open(user_folder+"/profileimage", 'wb') as out_file:
 						shutil.copyfileobj(response.raw, out_file)
-						
-					r = s.get("https://api.hevyapp.com/workout_count", headers=headers)
-					if r.status_code == 200:
-						data = r.json()
-						
-						workout_count = {"data":data, "Etag":r.headers['Etag']}
-						#print(json.dumps(r.json(), indent=4, sort_keys=True))
-						
-						with open(user_folder+"/workout_count.json", 'w') as f:
-							json.dump(workout_count, f)
-							
-						return 200
-					return r.status_code
+
+			r = s.get("https://api.hevyapp.com/workout_count", headers=headers)
+			if r.status_code == 200:
+				data = r.json()
+
+				workout_count = {"data":data, "Etag":r.headers['Etag']}
+
+				with open(user_folder+"/workout_count.json", 'w') as f:
+					json.dump(workout_count, f)
+
 			return 200
 		else:
+			print("Obtaining account details failed...")
 			return r.status_code
 	else:
-    		return r.status_code
+		print("Login failed...")
+		return r.status_code
 
 #
 # Simple method to log out. We'll delete the user id and auth-token from the sessions file
