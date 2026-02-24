@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 
 class Server(socketserver.TCPServer):
 
-    # Avoid "address already used" error when frequently restarting the script 
+    # Avoid "address already used" error when frequently restarting the script
     allow_reuse_address = True
 
 
@@ -34,7 +34,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             home_folder = str(Path.home())
             utb_folder = home_folder + "/.underthebar"
             session_data = {}
-            if os.path.exists(utb_folder+"/session.json"):	
+            if os.path.exists(utb_folder+"/session.json"):
                 with open(utb_folder+"/session.json", 'r') as file:
                     session_data = json.load(file)
                     session_data["strava-token-code"] = code_value
@@ -42,7 +42,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     json.dump(session_data,file)
 
         except:
-            
+
             self.send_response(200, "OK")
             self.end_headers()
             self.wfile.write("Failed. Didn't find code.".encode("utf-8"))
@@ -52,11 +52,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return
 
 
+# Define activity object for easy adding and searching
+class ActivityType:
+	def __init__(self, type, title, id):
+		self.type = type
+		self.title = title
+		self.id = id
 
-def do_the_thing():
-	print("starting strava_api > do_the_thing()")
+	# matches if the activity type matches directly, or if it matches the root of the type
+	def matches(self, activity_type):
+		return (activity_type == self.type or
+				str(activity_type) == f"root='{self.type}'")
 
-	# Load Strava API credentials from .env file
+# All activity types that can be pulled into Hevy
+ALL_ACTIVITY_TYPES = [
+	ActivityType("Run", "Running", "AC1BB830"),
+	ActivityType("Ride", "Cycling", "D8F7F851"),
+	ActivityType("Walk", "Walking", "33EDD7DB"),
+	ActivityType("Hike", "Hiking", "1C34A172"),
+]
+
+
+def _get_client():
+	"""Authenticate with Strava and return an authenticated client, or None on failure."""
 	script_folder = os.path.split(os.path.abspath(__file__))[0]
 	load_dotenv(os.path.join(script_folder, ".env"))
 	cl_id = os.environ.get("STRAVA_CLIENT_ID")
@@ -64,57 +82,128 @@ def do_the_thing():
 
 	if not cl_id or not cl_secret:
 		print("NEED TO ADD YOUR STRAVA API DETAILS TO .env !!!\n"*5)
-		return 404
+		return None, 404
 
-	get_token_url = False
+	home_folder = str(Path.home())
+	utb_folder = home_folder + "/.underthebar"
+	session_data = {}
+	if os.path.exists(utb_folder+"/session.json"):
+		with open(utb_folder+"/session.json", 'r') as file:
+			session_data = json.load(file)
+
+	get_token_url = "strava-token-refresh" not in session_data
 	get_token_refresh = False
-	get_token_access = True
+	get_token_access = not get_token_url
 
-	# things for Hevy
-	BASIC_HEADERS = {
-		'x-api-key': 'with_great_power',
-		'Content-Type': 'application/json',
-		'accept-encoding':'gzip'
-	}
+	client = Client()
 
-	# JSON of a basic running workout, we'll just adjust this
-	# run_template = {
-	  # "workout": {
-		# "clientId": None,
-		# "name": "Running (import)",
-		# "description": "(Import from Strava)",
-		# "imageUrls": [],
-		# "exercises": [
-		  # {
-			# "title": "Running",
-			# "id": "AC1BB830",
-			# "autoRestTimerSeconds": 0,
-			# "notes": "",
-			# "routineNotes": "",
-			# "sets": [
-			  # {
-				# "index": 0,
-				# "completed": True,
-				# "indicator": "normal",
-				# "weight": None,
-				# "reps": None,
-				# "distance": 3200,
-				# "duration": 1453
-			  # }
-			# ]
-		  # }
-		# ],
-		# "startTime": 1644300575,
-		# "endTime": 1644302088,
-		# "useAutoDurationTimer": True,
-		# "trackWorkoutAsRoutine": False,
-		# "isPrivate": True, # allows testing without spamming ppls feeds
-		# "appleWatch": False
-	  # },
-	  # "emptyResponse": True,
-	  # "updateRoutineValues": False,
-	  # "shareToStrava": False
-	# }
+	if get_token_url:
+		url = client.authorization_url(client_id=cl_id, redirect_uri='http://localhost:8888/authorization', scope=['activity:read'])
+		print(url)
+		webbrowser.open(url, new=1, autoraise=True)
+		print("Waiting for web browser response ....")
+		with Server(("", 8888), Handler) as httpd:
+			httpd.handle_request()
+
+		if os.path.exists(utb_folder+"/session.json"):
+			with open(utb_folder+"/session.json", 'r') as file:
+				session_data = json.load(file)
+
+		get_token_refresh = True
+
+	if get_token_refresh:
+		token_response = client.exchange_code_for_token(client_id=cl_id,
+												  client_secret=cl_secret,
+												  code=session_data["strava-token-code"])
+		access_token = token_response['access_token']
+		refresh_token = token_response['refresh_token']
+		client = Client(access_token=access_token)
+		session_data["strava-token-refresh"] = refresh_token
+		with open(utb_folder+"/session.json", 'w') as file:
+			json.dump(session_data, file)
+		get_token_access = False
+
+	if get_token_access:
+		token_response = client.refresh_access_token(client_id=cl_id,
+										  client_secret=cl_secret,
+										  refresh_token=session_data["strava-token-refresh"])
+		new_access_token = token_response['access_token']
+		client = Client(access_token=new_access_token)
+
+	return client, session_data
+
+
+def _get_submittable_types(enabled_types, session_data):
+	"""Return the list of ActivityType objects that are currently enabled."""
+	submittable = [at for at in ALL_ACTIVITY_TYPES if at.type in enabled_types]
+
+	# Note that this is a custom exercise that only exists for me in Hevy...
+	if session_data.get("user-id") == "f21f5af1-a602-48f0-82fb-ed09bc984326":
+		virtual_ride = ActivityType("VirtualRide", "Cycling (Virtual)", "89f3ed93-5418-4cc6-a114-0590f2977ae8")
+		if "VirtualRide" in enabled_types:
+			submittable.append(virtual_ride)
+
+	return submittable
+
+
+def get_recent_activities(enabled_types=None):
+	"""
+	Fetch up to 5 recent Strava activities matching the enabled types.
+	Returns (status_code, list_of_activity_info_dicts) where each dict has:
+	  id, name, type, type_title, start_date, distance, moving_time
+	"""
+	if enabled_types is None:
+		enabled_types = [at.type for at in ALL_ACTIVITY_TYPES]
+
+	print("starting strava_api > get_recent_activities()")
+	client, session_data = _get_client()
+	if client is None:
+		return session_data, []  # session_data is the error code here
+
+	athlete = client.get_athlete()
+	print("Hello from Strava, {}".format(athlete.firstname))
+
+	submittable_types = _get_submittable_types(enabled_types, session_data)
+
+	# Fetch recent activities and filter to matching types, up to 5
+	activities = client.get_activities(limit=20)
+	matching = []
+	for activity in activities:
+		print(activity.type, activity.name, activity.start_date)
+		for submittable_activity_type in submittable_types:
+			if submittable_activity_type.matches(activity.type):
+				matching.append({
+					"id": activity.id,
+					"name": activity.name,
+					"type": submittable_activity_type.type,
+					"type_title": submittable_activity_type.title,
+					"start_date": activity.start_date,
+					"distance": float(activity.distance) if activity.distance else 0,
+					"moving_time": int(activity.moving_time) if activity.moving_time else 0,
+				})
+				break
+		if len(matching) >= 5:
+			break
+
+	return 200, matching
+
+
+def import_activity(activity_id, enabled_types=None):
+	"""
+	Import a specific Strava activity (by id) into Hevy.
+	Returns status code (200 on success).
+	"""
+	if enabled_types is None:
+		enabled_types = [at.type for at in ALL_ACTIVITY_TYPES]
+
+	print("starting strava_api > import_activity()", activity_id)
+	client, session_data = _get_client()
+	if client is None:
+		return session_data  # error code
+
+	submittable_types = _get_submittable_types(enabled_types, session_data)
+
+	# JSON of a basic workout, we'll adjust this
 	run_template_tocopy = {
 	  "workout": {
 		"workout_id": "3413fa99-ace5-4209-b997-1ca3251f9fbc",
@@ -150,232 +239,105 @@ def do_the_thing():
 	  "strava_activity_local_time": "2025-8-23T9:15:39Z"
 	}
 
+	BASIC_HEADERS = {
+		'x-api-key': 'with_great_power',
+		'Content-Type': 'application/json',
+		'accept-encoding':'gzip'
+	}
 
+	activity = client.get_activity(activity_id)
 
-	# Check if we're logged in to strava
-	# The folder to access/store data files
-	home_folder = str(Path.home())
-	utb_folder = home_folder + "/.underthebar"
-	session_data = {}
-	if os.path.exists(utb_folder+"/session.json"):	
-		with open(utb_folder+"/session.json", 'r') as file:
-			session_data = json.load(file)
-	else:
-		pass
-	if "strava-token-refresh" in session_data:
-		get_token_url = False
-		print("Strava already logged in")
-	else:
-		get_token_url = True
-		print("Strava not logged in")
-
-
-
-
-	client = Client()
-
-	# If we're not logged in first step is to get a URL and go to the web browser
-	if get_token_url:
-		url = client.authorization_url(client_id=cl_id, redirect_uri='http://localhost:8888/authorization',scope=['activity:read'])#'read_all','profile:read_all',
-		
-
-		print(url)
-		#print("Go to the url and with dev tools obtain the returned 'code'. Update this file.")
-		
-		webbrowser.open(url, new=1, autoraise=True)
-		#sys.exit()
-
-		# Here we run a web server to catch the redirect from strava, single request server only
-		print("Waiting for web browser response ....")
-		with Server(("", 8888), Handler) as httpd:
-			httpd.handle_request()
-
-		# The server class receives and writes an access code to our session file, so reload it
-		if os.path.exists(utb_folder+"/session.json"):	
-			with open(utb_folder+"/session.json", 'r') as file:
-				session_data = json.load(file)
-
-		get_token_refresh = True
-		#sys.exit()
-
-	# Next part of logging in is to get current refresh/access tokens using the code we received
-	if get_token_refresh:
-		token_response = client.exchange_code_for_token(client_id=cl_id,
-												  client_secret=cl_secret,
-												  #code=cl_code)
-												  code=session_data["strava-token-code"])
-		access_token = token_response['access_token']
-		refresh_token = token_response['refresh_token']
-		#print("access:",access_token,"\nrefresh:",refresh_token)
-		client = Client(access_token=access_token)
-
-		session_data["strava-token-refresh"] = refresh_token
-		with open(utb_folder+"/session.json", 'w') as file:
-			json.dump(session_data,file)
-		get_token_access = False
-	#    sys.exit()
-	#sys.exit()
-
-	# If we were already logged in, we use the stored refresh token to get an access token
-	if get_token_access:
-		token_response = client.refresh_access_token(client_id=cl_id,
-										  client_secret=cl_secret,
-										  #refresh_token=cl_refresh)
-										  refresh_token=session_data["strava-token-refresh"])
-		new_access_token = token_response['access_token']
-		#print("access:",new_access_token)
-		client = Client(access_token=new_access_token)
-
-
-	# At this point we should be entirely logged in to Strava
-	# So retrieve a list of most recent activities, then go through to get the latest submittable
-	athlete = client.get_athlete()
-	print("Hello from Strava, {}".format(athlete.firstname))
-	activities = client.get_activities(limit=10)
-
-	# Define activity object for easy adding and searching
-	class ActivityType:
-		def __init__(self, type, title, id):
-			self.type = type
-			self.title = title
-			self.id = id
-		
-		# matches if the activity type matches directly, or if it matches the root of the type
-		def matches(self, activity_type):
-			return (activity_type == self.type or 
-					str(activity_type) == f"root='{self.type}'")
-	
-	#define activities that can be pulled into hevy
-	SUBMITTABLE_ACTIVITY_TYPES = [
-		ActivityType("Run", "Running", "AC1BB830"),
-		ActivityType("Ride", "Cycling", "D8F7F851"),
-		ActivityType("Walk", "Walking", "33EDD7DB"),
-		ActivityType("Hike", "Hiking", "1C34A172"),
-
-	]
-
-	# Note that this is a custom exercise that only exists for me in Hevy...
-	if session_data["user-id"] == "f21f5af1-a602-48f0-82fb-ed09bc984326":
-		SUBMITTABLE_ACTIVITY_TYPES.append(ActivityType("VirtualRide", "Cycling (Virtual)", "89f3ed93-5418-4cc6-a114-0590f2977ae8"))
-
-
-	
-
-	for activity in activities:
-		#print("{0.type} {0.moving_time} {0.distance} {0.start_date} {0.average_heartrate} {0.max_heartrate} {0.average_watts} {0.max_watts}".format(activity))
-		print(activity.type,activity.name, activity.start_date)
-		run_template = copy.deepcopy(run_template_tocopy)
-		#print(str(activity.type) == "root='Run'")
-		#print(type(activity.type))
-		# Here handle the submittable activities, we only want to submit one of those
-		# For the activity we want we'll modify the hevy workout template
-		do_submit = False
-		for submittable_activity_type in SUBMITTABLE_ACTIVITY_TYPES:
-			
-			if submittable_activity_type.matches(activity.type):
-				print("Importing ",activity.name, activity.start_date)
-				activity = client.get_activity(activity.id)
-
-				run_template["workout"]["title"] = activity.name
-
-				# Pulls data from the constants table
-				run_template["workout"]["exercises"][0]["title"] = submittable_activity_type.title
-				run_template["workout"]["exercises"][0]["exercise_template_id"] = submittable_activity_type.id
-
-				run_template["workout"]["start_time"] = int(activity.start_date.timestamp())
-				run_template["workout"]["end_time"] = int(activity.start_date.timestamp()+activity.moving_time)
-				run_template["strava_activity_local_time"] = activity.start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
-				run_template["workout"]["exercises"][0]["sets"][0]["duration_seconds"] = int(activity.moving_time)
-				run_template["workout"]["exercises"][0]["sets"][0]["distance_meters"] = int(activity.distance)
-				run_template["workout"]["exercises"][0]["sets"][0]["completed_at"] = (activity.start_date+timedelta(seconds=activity.moving_time)).strftime('%Y-%m-%dT%H:%M:%SZ')
-				print("Completed at",run_template["workout"]["exercises"][0]["sets"][0]["completed_at"])
-				
-				if activity.description:
-					run_template["workout"]["description"] = str(activity.description) + "\n\n"+run_template["workout"]["description"]
-				if activity.device_name:
-					run_template["workout"]["description"] = run_template["workout"]["description"] +"(" + str(activity.device_name) + ")"
-			
-				print("\n",json.dumps(run_template,indent=4),"\n") # print before doing heartrate to avoid excessive printout
-
-				if activity.average_heartrate:
-					run_template["workout"]["exercises"][0]["notes"] = "Heartrate Avg: " + str(activity.average_heartrate) + "bpm, Max: " + str(activity.max_heartrate) + "bpm."
-					
-					
-					# PLAY WITH ADDING HEART RATE TO HEVY
-					print("Try heart rate stream")
-					streams = client.get_activity_streams(activity.id,types=["time","heartrate"])#, series_type="time", resolution="high")
-					print("Time data points",len(streams["time"].data))
-					print("Heartrate data points",len(streams["heartrate"].data))
-					samples = []
-					for datapoint in range(0,len(streams["time"].data)):
-						
-						#print({"timestamp_ms":int((activity.start_date.timestamp()+streams["time"].data[datapoint]+259200)*1000), "bpm":streams["heartrate"].data[datapoint]})
-						samples.append({"timestamp_ms":int((activity.start_date.timestamp()+streams["time"].data[datapoint])*1000), "bpm":streams["heartrate"].data[datapoint]})
-						#samples.append({"timestamp_ms":int((1755906339+streams["time"].data[datapoint])*1000), "bpm":streams["heartrate"].data[datapoint]}) #time from template
-					
-					run_template["workout"]["biometrics"] = {"total_calories": activity.calories,"heart_rate_samples":samples}
-					#print(run_template)
-
-				if activity.average_watts:
-					run_template["workout"]["exercises"][0]["notes"] += "\nPower Avg: " + str(activity.average_watts) + "W, Max: " + str(activity.max_watts) + "W."
-
-				#print("\n",json.dumps(run_template,indent=4),"\n")
-				do_submit = True 
-		#do_submit = False	
-		#return
-		
-		# Now log in to Hevy and do the submission
-		if do_submit:
-			do_submit = False
-
-			import hevy_api
-			user_data = hevy_api.is_logged_in()
-			if user_data[0] == False:
-				print("403")
-				sys.exit()
-			user_folder = user_data[1]
-			auth_token = user_data[2]
-			
-			
-			s = requests.Session()
-			#s.headers.update({'auth-token': auth_token}) # update for Hevy API changes
-			s.headers.update({'Authorization': "Bearer "+auth_token})
-			headers = BASIC_HEADERS.copy()
-
-			r = s.get("https://api.hevyapp.com/account", headers=headers)
-			data = r.json()
-			username = data["username"]
-			print("Hello from Hevy,",username)
-			my_user_id = data["id"]
-			#run_template["workout"]["clientId"] = my_user_id # This is wrong, we just want a random uuid it seems
-			
-			# generate uuid using workout start time as seed, so is repeatable (might prevent submitting duplicates?)
-			rnd = random.Random()
-			#rnd.seed(run_template["workout"]["startTime"])
-			rnd.seed(run_template["workout"]["start_time"])
-			local_id = uuid.UUID(int=rnd.getrandbits(128), version=4)
-			#run_template["workout"]["clientId"] = str(local_id)
-			run_template["workout"]["workout_id"] = str(local_id)
-			
-			#run_template["workout"]["clientId"] = str(uuid.uuid4()) # or totally random id
-
-
-			#print("\n",json.dumps(run_template,indent=4),"\n")
-			#sys.exit()
-
-			#r = s.post('https://api.hevyapp.com/workout', data=json.dumps(run_template), headers=headers)
-			r = s.post('https://api.hevyapp.com/v2/workout', data=json.dumps(run_template), headers=headers)
-			print(r)
-			#sys.exit()
+	matched_type = None
+	for submittable_activity_type in submittable_types:
+		if submittable_activity_type.matches(activity.type):
+			matched_type = submittable_activity_type
 			break
-		else:
-			print("No valid entries to import.")
 
-		
+	if matched_type is None:
+		print("Activity type not in submittable types")
+		return 400
 
+	run_template = copy.deepcopy(run_template_tocopy)
+	print("Importing", activity.name, activity.start_date)
+
+	run_template["workout"]["title"] = activity.name
+	run_template["workout"]["exercises"][0]["title"] = matched_type.title
+	run_template["workout"]["exercises"][0]["exercise_template_id"] = matched_type.id
+
+	run_template["workout"]["start_time"] = int(activity.start_date.timestamp())
+	run_template["workout"]["end_time"] = int(activity.start_date.timestamp() + activity.moving_time)
+	run_template["strava_activity_local_time"] = activity.start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+	run_template["workout"]["exercises"][0]["sets"][0]["duration_seconds"] = int(activity.moving_time)
+	run_template["workout"]["exercises"][0]["sets"][0]["distance_meters"] = int(activity.distance)
+	run_template["workout"]["exercises"][0]["sets"][0]["completed_at"] = (activity.start_date + timedelta(seconds=activity.moving_time)).strftime('%Y-%m-%dT%H:%M:%SZ')
+	print("Completed at", run_template["workout"]["exercises"][0]["sets"][0]["completed_at"])
+
+	if activity.description:
+		run_template["workout"]["description"] = str(activity.description) + "\n\n" + run_template["workout"]["description"]
+	if activity.device_name:
+		run_template["workout"]["description"] = run_template["workout"]["description"] + "(" + str(activity.device_name) + ")"
+
+	print("\n", json.dumps(run_template, indent=4), "\n")
+
+	if activity.average_heartrate:
+		run_template["workout"]["exercises"][0]["notes"] = "Heartrate Avg: " + str(activity.average_heartrate) + "bpm, Max: " + str(activity.max_heartrate) + "bpm."
+
+		print("Try heart rate stream")
+		streams = client.get_activity_streams(activity.id, types=["time", "heartrate"])
+		print("Time data points", len(streams["time"].data))
+		print("Heartrate data points", len(streams["heartrate"].data))
+		samples = []
+		for datapoint in range(0, len(streams["time"].data)):
+			samples.append({"timestamp_ms": int((activity.start_date.timestamp() + streams["time"].data[datapoint]) * 1000), "bpm": streams["heartrate"].data[datapoint]})
+
+		run_template["workout"]["biometrics"] = {"total_calories": activity.calories, "heart_rate_samples": samples}
+
+	if activity.average_watts:
+		run_template["workout"]["exercises"][0]["notes"] += "\nPower Avg: " + str(activity.average_watts) + "W, Max: " + str(activity.max_watts) + "W."
+
+	# Log in to Hevy and submit
+	import hevy_api
+	user_data = hevy_api.is_logged_in()
+	if user_data[0] == False:
+		print("403")
+		return 403
+	user_folder = user_data[1]
+	auth_token = user_data[2]
+
+	s = requests.Session()
+	s.headers.update({'Authorization': "Bearer " + auth_token})
+	headers = BASIC_HEADERS.copy()
+
+	r = s.get("https://api.hevyapp.com/account", headers=headers)
+	data = r.json()
+	username = data["username"]
+	print("Hello from Hevy,", username)
+
+	rnd = random.Random()
+	rnd.seed(run_template["workout"]["start_time"])
+	local_id = uuid.UUID(int=rnd.getrandbits(128), version=4)
+	run_template["workout"]["workout_id"] = str(local_id)
+
+	r = s.post('https://api.hevyapp.com/v2/workout', data=json.dumps(run_template), headers=headers)
+	print(r)
 
 	print("success")
 	return 200
+
+
+def do_the_thing():
+	"""Legacy entry point: fetch activities and import the first matching one automatically."""
+	print("starting strava_api > do_the_thing()")
+	enabled_types = [at.type for at in ALL_ACTIVITY_TYPES]
+	status, activities = get_recent_activities(enabled_types)
+	if status != 200:
+		return status
+	if not activities:
+		print("No valid entries to import.")
+		return 200
+	first = activities[0]
+	return import_activity(first["id"], enabled_types)
+
 
 if __name__ == "__main__":
 	do_the_thing()
