@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QListWidget,
     QListWidgetItem,
+    QScrollArea,
     QWidget,
 )
 from PySide6.QtGui import QPalette, QColor
@@ -74,18 +75,23 @@ class Setting(QWidget):
 		all_types = [at.type for at in strava_api.ALL_ACTIVITY_TYPES]
 		saved_filters = session_data.get(STRAVA_SETTINGS_KEY, all_types)
 
+		# Outer layout holds the scroll area
 		pagelayout = QVBoxLayout()
-		toplayout = QHBoxLayout()
-		pagelayout.addLayout(toplayout)
-		pagelayout.addStretch()
+		scroll = QScrollArea()
+		scroll.setWidgetResizable(True)
+		scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+		pagelayout.addWidget(scroll)
+		self.setLayout(pagelayout)
 
-		toplayout.addStretch()
-
-
+		# Inner widget that lives inside the scroll area
+		inner = QWidget()
+		scroll.setWidget(inner)
 		detailslayout = QVBoxLayout()
+		detailslayout.setAlignment(Qt.AlignTop)
+		inner.setLayout(detailslayout)
+
+		# ── API data section ──────────────────────────────────────────────
 		detailsgrid = QGridLayout()
-
-
 
 		self.apiCallable = ["account","body_measurements","user_preferences","user_subscription","workout_count",]
 		self.apiCallable_dict = {}
@@ -99,10 +105,8 @@ class Setting(QWidget):
 			detailsgrid.addWidget(thelabel, btnID,0)
 
 			btn = QPushButton()
-
 			btn.setIcon(self.loadIcon(self.script_folder+"/icons/cloud-arrow-down-solid.svg"))
 			btn.setIconSize(QSize(24,24))
-
 			btn.clicked.connect(lambda *args, x=btnID: self.update_button_pushed(x))
 			self.apiCallable_button.append(btn)
 			detailsgrid.addWidget(btn,btnID,1)
@@ -114,59 +118,64 @@ class Setting(QWidget):
 
 		detailslayout.addLayout(detailsgrid)
 
-		workoutSyncLabel = QLabel("\nWorkout Synchronisation")
-		detailslayout.addWidget(workoutSyncLabel)
+		# ── Workout sync section ──────────────────────────────────────────
+		detailslayout.addWidget(QLabel("\nWorkout Synchronisation"))
 		localWorkoutCount = len(os.listdir(user_folder+"/workouts"))
-		workoutsyncgrid = QGridLayout()
 		self.localworkoutsLabel = QLabel("Local Workouts: "+str(localWorkoutCount))
 		detailslayout.addWidget(self.localworkoutsLabel)
 		self.remoteworkoutsLabel = QLabel("Remote Workouts: "+str(workoutcount_data["data"]["workout_count"]))
 		detailslayout.addWidget(self.remoteworkoutsLabel)
 
-		#Batch download
+		workoutsyncgrid = QGridLayout()
+
 		workouts_batch_label = QLabel("workouts_batch")
 		workouts_batch_label.setFixedWidth(200)
-		workoutsyncgrid.addWidget(workouts_batch_label, 1,0)
+		workoutsyncgrid.addWidget(workouts_batch_label, 0,0)
 		self.workoutsyncbtn = QPushButton()
 		self.workoutsyncbtn.setIcon(self.loadIcon(self.script_folder+"/icons/cloud-arrow-down-solid.svg"))
 		self.workoutsyncbtn.setIconSize(QSize(24,24))
 		self.workoutsyncbtn.clicked.connect(lambda *args, x="workouts_batch": self.batch_button_pushed(x))
-		workoutsyncgrid.addWidget(self.workoutsyncbtn,1,1)
+		workoutsyncgrid.addWidget(self.workoutsyncbtn,0,1)
 		self.workoutsyncstateLabel = QLabel("Use for bulk downloads")
 		self.workoutsyncstateLabel.setFixedWidth(200)
-		workoutsyncgrid.addWidget(self.workoutsyncstateLabel,1,2)
+		workoutsyncgrid.addWidget(self.workoutsyncstateLabel,0,2)
 
-		#Workout Sync Batch download
 		workouts_sync_batch_label = QLabel("workouts_sync_batch")
 		workouts_sync_batch_label.setFixedWidth(200)
-		workoutsyncgrid.addWidget(workouts_sync_batch_label, 2,0)
+		workoutsyncgrid.addWidget(workouts_sync_batch_label, 1,0)
 		self.workoutsyncbatchbtn = QPushButton()
 		self.workoutsyncbatchbtn.setIcon(self.loadIcon(self.script_folder+"/icons/cloud-arrow-down-solid.svg"))
 		self.workoutsyncbatchbtn.setIconSize(QSize(24,24))
 		self.workoutsyncbatchbtn.clicked.connect(lambda *args, x="workouts_sync_batch": self.batch_button_pushed(x))
-		workoutsyncgrid.addWidget(self.workoutsyncbatchbtn,2,1)
+		workoutsyncgrid.addWidget(self.workoutsyncbatchbtn,1,1)
 		self.workoutsyncbatchstateLabel = QLabel("Use for latest updates")
 		self.workoutsyncbatchstateLabel.setFixedWidth(200)
-		workoutsyncgrid.addWidget(self.workoutsyncbatchstateLabel,2,2)
+		workoutsyncgrid.addWidget(self.workoutsyncbatchstateLabel,1,2)
 
-		#Strava import
+		detailslayout.addLayout(workoutsyncgrid)
+
+		# ── Strava section ────────────────────────────────────────────────
+		detailslayout.addWidget(QLabel("\nStrava Import"))
+
+		stravagrid = QGridLayout()
+
 		strava_import_label = QLabel("strava import")
 		strava_import_label.setFixedWidth(200)
-		workoutsyncgrid.addWidget(strava_import_label, 3,0)
+		stravagrid.addWidget(strava_import_label, 0,0)
 		self.stravaimportbtn = QPushButton()
 		self.stravaimportbtn.setIcon(self.loadIcon(self.script_folder+"/icons/cloud-arrow-down-solid.svg"))
 		self.stravaimportbtn.setIconSize(QSize(24,24))
 		self.stravaimportbtn.clicked.connect(self.strava_import_clicked)
-		workoutsyncgrid.addWidget(self.stravaimportbtn,3,1)
+		stravagrid.addWidget(self.stravaimportbtn,0,1)
 		self.stravaimportstateLabel = QLabel("Import most recent run/walk/hike/ride")
 		self.stravaimportstateLabel.setFixedWidth(200)
-		workoutsyncgrid.addWidget(self.stravaimportstateLabel,3,2)
+		stravagrid.addWidget(self.stravaimportstateLabel,0,2)
 
-		detailslayout.addLayout(workoutsyncgrid)
+		detailslayout.addLayout(stravagrid)
 
-		# Strava activity type filter checkboxes
-		strava_filter_label = QLabel("\nStrava Activity Type Filters")
-		detailslayout.addWidget(strava_filter_label)
+		# Activity type filter checkboxes
+		filter_label = QLabel("Activity type filters:")
+		detailslayout.addWidget(filter_label)
 		filter_layout = QHBoxLayout()
 		self.strava_type_checkboxes = {}
 		for at in strava_api.ALL_ACTIVITY_TYPES:
@@ -178,11 +187,10 @@ class Setting(QWidget):
 		filter_layout.addStretch()
 		detailslayout.addLayout(filter_layout)
 
-		# Strava credentials editor
+		# Strava API credentials
 		self.env_path = os.path.join(self.script_folder, ".env")
 		load_dotenv(self.env_path, override=True)
-		strava_creds_label = QLabel("\nStrava API Credentials")
-		detailslayout.addWidget(strava_creds_label)
+		detailslayout.addWidget(QLabel("\nStrava API Credentials"))
 		stravacredsgrid = QGridLayout()
 
 		strava_id_label = QLabel("Client ID")
@@ -216,18 +224,12 @@ class Setting(QWidget):
 
 		detailslayout.addLayout(stravacredsgrid)
 
-		# Log out and quit button
-		log_out_label = QLabel("Logout and Quit")
-		log_out_label.setFixedWidth(200)
-		workoutsyncgrid.addWidget(log_out_label, 4,0)
-		self.log_out_button = QPushButton("Logout\nand Quit")
+		# ── Logout ────────────────────────────────────────────────────────
+		detailslayout.addWidget(QLabel("\n"))
+		self.log_out_button = QPushButton("Logout and Quit")
+		self.log_out_button.setFixedWidth(200)
 		self.log_out_button.clicked.connect(self.log_out_quit)
-		workoutsyncgrid.addWidget(self.log_out_button,4,1)
-
-		toplayout.addLayout(detailslayout)
-		toplayout.addStretch()
-
-		self.setLayout(pagelayout)
+		detailslayout.addWidget(self.log_out_button)
 
 		self.pool = QThreadPool()
 		self.pool.setMaxThreadCount(5)
