@@ -210,7 +210,7 @@ def import_activity(activity_id, enabled_types=None):
 		"title": "Running (import)",
 		"description": "(Import from Strava)",
 		"media": [],
-		"imageUrls": [],
+		"image_urls": [],
 		"exercises": [
 		  {
 			"title": "Running",
@@ -297,29 +297,22 @@ def import_activity(activity_id, enabled_types=None):
 		run_template["workout"]["exercises"][0]["notes"] += "\nPower Avg: " + str(activity.average_watts) + "W, Max: " + str(activity.max_watts) + "W."
 
 	# Fetch photos from the activity
-	run_template["workout"]["imageUrls"] = []
+	run_template["workout"]["image_urls"] = []
 	try:
 		photos = client.get_activity_photos(activity_id, size=5000)
 		photo_urls = []
 		for photo in photos:
-			print(f"Photo object attrs: {vars(photo) if hasattr(photo, '__dict__') else dir(photo)}")
 			if hasattr(photo, 'urls') and photo.urls:
 				# urls dict has keys like '100', '600', '2000' for different sizes
-				print(f"Photo URLs dict: {photo.urls}")
 				max_size_key = max(photo.urls.keys(), key=lambda x: int(x) if x.isdigit() else 0)
-				print(f"Selected size key: {max_size_key}, URL: {photo.urls[max_size_key]}")
 				photo_urls.append(photo.urls[max_size_key])
-			else:
-				print(f"Photo has no urls attr or urls is empty. urls={getattr(photo, 'urls', 'MISSING')}")
 		if photo_urls:
-			run_template["workout"]["imageUrls"] = photo_urls
-			print(f"Found {len(photo_urls)} photo(s) to import: {photo_urls}")
+			run_template["workout"]["image_urls"] = photo_urls
+			print(f"Found {len(photo_urls)} photo(s) to import")
 		else:
 			print("No photos found for activity")
 	except Exception as e:
-		import traceback
 		print(f"Could not fetch photos: {e}")
-		traceback.print_exc()
 
 	# Log in to Hevy and submit
 	import hevy_api
@@ -344,15 +337,8 @@ def import_activity(activity_id, enabled_types=None):
 	local_id = uuid.UUID(int=rnd.getrandbits(128), version=4)
 	run_template["workout"]["workout_id"] = str(local_id)
 
-	payload = json.dumps(run_template)
-	print(f"Submitting to Hevy with imageUrls: {run_template['workout'].get('imageUrls', [])}")
-	print(f"Full payload:\n{payload}")
-	r = s.post('https://api.hevyapp.com/v2/workout', data=payload, headers=headers)
-	print(f"Hevy response status: {r.status_code}")
-	try:
-		print(f"Hevy response body: {r.json()}")
-	except Exception:
-		print(f"Hevy response text: {r.text}")
+	r = s.post('https://api.hevyapp.com/v2/workout', data=json.dumps(run_template), headers=headers)
+	print(r)
 
 	print("success")
 	return 200
