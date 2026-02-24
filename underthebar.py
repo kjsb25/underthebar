@@ -61,19 +61,7 @@ class UnderTheBar(QMainWindow):
 		pagelayout.addLayout(contentlayout)
 		contentlayout.addLayout(button_layout)
 		contentlayout.addLayout(self.stacklayout)
-		
-		# dumb remove title bar
-		if sillytheme:
-			self.setWindowFlag(Qt.FramelessWindowHint, True)
-			self.statusBar()
-			qbtn = QPushButton("X")
-			qbtn.setFlat(False)
-			qbtn.setFixedSize(20,20)
-			qbtn.clicked.connect(self.close)
-			toplayout.addWidget(qbtn, alignment=Qt.AlignTop)
-			toplayout.insertSpacing(0,20)
-		
-		
+
 		#btn = QPushButton("🧍")
 		btn = QPushButton()
 		#btn.setStyleSheet("font-size: 40px;");
@@ -175,31 +163,8 @@ class UnderTheBar(QMainWindow):
 		
 		
 
-	def mousePressEvent(self, event):
-		if event.button() == Qt.LeftButton:
-			self.offset = event.pos()
-		else:
-			super().mousePressEvent(event)
 
-	def mouseMoveEvent(self, event):
-		if hasattr(self, 'offset'):
-			if self.offset is not None and event.buttons() == Qt.LeftButton:
-				self.move(self.pos() + event.pos() - self.offset)
-			else:
-				super().mouseMoveEvent(event)
-
-	def mouseReleaseEvent(self, event):
-		self.offset = None
-		super().mouseReleaseEvent(event)	
-		
-	def mouseDoubleClickEvent(self, event):
-		state = self.windowState()
-		if state == Qt.WindowMaximized:
-			self.setWindowState(Qt.WindowNoState)
-		elif state == Qt.WindowNoState:
-			self.setWindowState(Qt.WindowMaximized)
-
-		
+	
 class Color(QWidget):
 
 	def __init__(self, color):
