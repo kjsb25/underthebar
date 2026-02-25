@@ -344,15 +344,30 @@ def import_activity(activity_id, enabled_types=None):
 	local_id = uuid.UUID(int=rnd.getrandbits(128), version=4)
 	run_template["workout"]["workout_id"] = str(local_id)
 
+	workout_id = str(local_id)
 	payload = json.dumps(run_template)
 	print(f"Submitting to Hevy with image_urls: {run_template['workout'].get('image_urls', [])}")
 	print(f"Full payload:\n{payload}")
 	r = s.post('https://api.hevyapp.com/v2/workout', data=payload, headers=headers)
-	print(f"Hevy response status: {r.status_code}")
+	print(f"Hevy POST response status: {r.status_code}")
 	try:
-		print(f"Hevy response body: {r.json()}")
+		print(f"Hevy POST response body: {r.json()}")
 	except Exception:
-		print(f"Hevy response text: {r.text}")
+		print(f"Hevy POST response text: {r.text}")
+
+	if r.status_code == 409:
+		# Workout already exists — update it via PUT
+		print(f"Workout {workout_id} already exists, updating via PUT")
+		r = s.put(f'https://api.hevyapp.com/v2/workout/{workout_id}', data=payload, headers=headers)
+		print(f"Hevy PUT response status: {r.status_code}")
+		try:
+			print(f"Hevy PUT response body: {r.json()}")
+		except Exception:
+			print(f"Hevy PUT response text: {r.text}")
+
+	if r.status_code not in (200, 201):
+		print(f"Import failed with status {r.status_code}")
+		return r.status_code
 
 	print("success")
 	return 200
