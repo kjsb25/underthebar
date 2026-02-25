@@ -209,8 +209,6 @@ def import_activity(activity_id, enabled_types=None):
 		"workout_id": "3413fa99-ace5-4209-b997-1ca3251f9fbc",
 		"title": "Running (import)",
 		"description": "(Import from Strava)",
-		"media": [],
-		"image_urls": [],
 		"exercises": [
 		  {
 			"title": "Running",
@@ -271,22 +269,16 @@ def import_activity(activity_id, enabled_types=None):
 	run_template["workout"]["exercises"][0]["sets"][0]["duration_seconds"] = int(activity.moving_time)
 	run_template["workout"]["exercises"][0]["sets"][0]["distance_meters"] = int(activity.distance)
 	run_template["workout"]["exercises"][0]["sets"][0]["completed_at"] = (activity.start_date + timedelta(seconds=activity.moving_time)).strftime('%Y-%m-%dT%H:%M:%SZ')
-	print("Completed at", run_template["workout"]["exercises"][0]["sets"][0]["completed_at"])
 
 	if activity.description:
 		run_template["workout"]["description"] = str(activity.description) + "\n\n" + run_template["workout"]["description"]
 	if activity.device_name:
 		run_template["workout"]["description"] = run_template["workout"]["description"] + "(" + str(activity.device_name) + ")"
 
-	print("\n", json.dumps(run_template, indent=4), "\n")
-
 	if activity.average_heartrate:
 		run_template["workout"]["exercises"][0]["notes"] = "Heartrate Avg: " + str(activity.average_heartrate) + "bpm, Max: " + str(activity.max_heartrate) + "bpm."
 
-		print("Try heart rate stream")
 		streams = client.get_activity_streams(activity.id, types=["time", "heartrate"])
-		print("Time data points", len(streams["time"].data))
-		print("Heartrate data points", len(streams["heartrate"].data))
 		samples = []
 		for datapoint in range(0, len(streams["time"].data)):
 			samples.append({"timestamp_ms": int((activity.start_date.timestamp() + streams["time"].data[datapoint]) * 1000), "bpm": streams["heartrate"].data[datapoint]})
@@ -295,31 +287,6 @@ def import_activity(activity_id, enabled_types=None):
 
 	if activity.average_watts:
 		run_template["workout"]["exercises"][0]["notes"] += "\nPower Avg: " + str(activity.average_watts) + "W, Max: " + str(activity.max_watts) + "W."
-
-	# Fetch photos from the activity
-	run_template["workout"]["image_urls"] = []
-	try:
-		photos = client.get_activity_photos(activity_id, size=5000)
-		photo_urls = []
-		for photo in photos:
-			print(f"Photo object attrs: {vars(photo) if hasattr(photo, '__dict__') else dir(photo)}")
-			if hasattr(photo, 'urls') and photo.urls:
-				# urls dict has keys like '100', '600', '2000' for different sizes
-				print(f"Photo URLs dict: {photo.urls}")
-				max_size_key = max(photo.urls.keys(), key=lambda x: int(x) if x.isdigit() else 0)
-				print(f"Selected size key: {max_size_key}, URL: {photo.urls[max_size_key]}")
-				photo_urls.append(photo.urls[max_size_key])
-			else:
-				print(f"Photo has no urls attr or urls is empty. urls={getattr(photo, 'urls', 'MISSING')}")
-		if photo_urls:
-			run_template["workout"]["image_urls"] = photo_urls
-			print(f"Found {len(photo_urls)} photo(s) to import: {photo_urls}")
-		else:
-			print("No photos found for activity")
-	except Exception as e:
-		import traceback
-		print(f"Could not fetch photos: {e}")
-		traceback.print_exc()
 
 	# Log in to Hevy and submit
 	import hevy_api
@@ -346,24 +313,14 @@ def import_activity(activity_id, enabled_types=None):
 
 	workout_id = str(local_id)
 	payload = json.dumps(run_template)
-	print(f"Submitting to Hevy with image_urls: {run_template['workout'].get('image_urls', [])}")
-	print(f"Full payload:\n{payload}")
 	r = s.post('https://api.hevyapp.com/v2/workout', data=payload, headers=headers)
-	print(f"Hevy POST response status: {r.status_code}")
-	try:
-		print(f"Hevy POST response body: {r.json()}")
-	except Exception:
-		print(f"Hevy POST response text: {r.text}")
+	print(f"Hevy POST {r.status_code}")
 
 	if r.status_code == 409:
 		# Workout already exists — update it via PUT
 		print(f"Workout {workout_id} already exists, updating via PUT")
 		r = s.put(f'https://api.hevyapp.com/v2/workout/{workout_id}', data=payload, headers=headers)
-		print(f"Hevy PUT response status: {r.status_code}")
-		try:
-			print(f"Hevy PUT response body: {r.json()}")
-		except Exception:
-			print(f"Hevy PUT response text: {r.text}")
+		print(f"Hevy PUT {r.status_code}")
 
 	if r.status_code not in (200, 201):
 		print(f"Import failed with status {r.status_code}")
