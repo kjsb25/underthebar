@@ -233,7 +233,7 @@ def import_activity(activity_id, enabled_types=None):
 		"end_time": 1755910466,
 		"apple_watch": False,
 		"wearos_watch": False,
-		"is_private": False,
+		"is_private": True,
 		"is_biometrics_public": True
 	  },
 	  "share_to_strava": False,
