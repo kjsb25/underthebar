@@ -177,6 +177,14 @@ class Setting(QWidget):
 
 		detailslayout.addLayout(stravagrid)
 
+		if not strava_api._is_production():
+			dev_warning = QLabel("⚠  DEV MODE — all imported activities will be set to private")
+			dev_warning.setStyleSheet(
+				"background-color: #f5a623; color: #000; font-weight: bold;"
+				" padding: 4px 8px; border-radius: 4px;"
+			)
+			detailslayout.addWidget(dev_warning)
+
 		# Activity type filter checkboxes
 		filter_label = QLabel("Activity type filters:")
 		detailslayout.addWidget(filter_label)
