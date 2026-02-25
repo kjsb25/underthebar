@@ -209,7 +209,6 @@ def import_activity(activity_id, enabled_types=None):
 		"workout_id": "3413fa99-ace5-4209-b997-1ca3251f9fbc",
 		"title": "Running (import)",
 		"description": "(Import from Strava)",
-		"media": [],
 		"exercises": [
 		  {
 			"title": "Running",
@@ -232,7 +231,7 @@ def import_activity(activity_id, enabled_types=None):
 		"end_time": 1755910466,
 		"apple_watch": False,
 		"wearos_watch": False,
-		"is_private": False,
+		"is_private": True,
 		"is_biometrics_public": True
 	  },
 	  "share_to_strava": False,
@@ -270,22 +269,16 @@ def import_activity(activity_id, enabled_types=None):
 	run_template["workout"]["exercises"][0]["sets"][0]["duration_seconds"] = int(activity.moving_time)
 	run_template["workout"]["exercises"][0]["sets"][0]["distance_meters"] = int(activity.distance)
 	run_template["workout"]["exercises"][0]["sets"][0]["completed_at"] = (activity.start_date + timedelta(seconds=activity.moving_time)).strftime('%Y-%m-%dT%H:%M:%SZ')
-	print("Completed at", run_template["workout"]["exercises"][0]["sets"][0]["completed_at"])
 
 	if activity.description:
 		run_template["workout"]["description"] = str(activity.description) + "\n\n" + run_template["workout"]["description"]
 	if activity.device_name:
 		run_template["workout"]["description"] = run_template["workout"]["description"] + "(" + str(activity.device_name) + ")"
 
-	print("\n", json.dumps(run_template, indent=4), "\n")
-
 	if activity.average_heartrate:
 		run_template["workout"]["exercises"][0]["notes"] = "Heartrate Avg: " + str(activity.average_heartrate) + "bpm, Max: " + str(activity.max_heartrate) + "bpm."
 
-		print("Try heart rate stream")
 		streams = client.get_activity_streams(activity.id, types=["time", "heartrate"])
-		print("Time data points", len(streams["time"].data))
-		print("Heartrate data points", len(streams["heartrate"].data))
 		samples = []
 		for datapoint in range(0, len(streams["time"].data)):
 			samples.append({"timestamp_ms": int((activity.start_date.timestamp() + streams["time"].data[datapoint]) * 1000), "bpm": streams["heartrate"].data[datapoint]})
@@ -318,8 +311,20 @@ def import_activity(activity_id, enabled_types=None):
 	local_id = uuid.UUID(int=rnd.getrandbits(128), version=4)
 	run_template["workout"]["workout_id"] = str(local_id)
 
-	r = s.post('https://api.hevyapp.com/v2/workout', data=json.dumps(run_template), headers=headers)
-	print(r)
+	workout_id = str(local_id)
+	payload = json.dumps(run_template)
+	r = s.post('https://api.hevyapp.com/v2/workout', data=payload, headers=headers)
+	print(f"Hevy POST {r.status_code}")
+
+	if r.status_code == 409:
+		# Workout already exists — update it via PUT
+		print(f"Workout {workout_id} already exists, updating via PUT")
+		r = s.put(f'https://api.hevyapp.com/v2/workout/{workout_id}', data=payload, headers=headers)
+		print(f"Hevy PUT {r.status_code}")
+
+	if r.status_code not in (200, 201):
+		print(f"Import failed with status {r.status_code}")
+		return r.status_code
 
 	print("success")
 	return 200
