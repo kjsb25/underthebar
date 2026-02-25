@@ -13,6 +13,22 @@ import uuid
 import random
 import copy
 from dotenv import load_dotenv
+import subprocess
+
+
+def _is_production():
+    """Return True if running in production (PyInstaller bundle or main git branch)."""
+    if getattr(sys, 'frozen', False):
+        return True
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True
+        )
+        return result.returncode == 0 and result.stdout.strip() == "main"
+    except Exception:
+        return False
+
 
 class Server(socketserver.TCPServer):
 
@@ -231,7 +247,7 @@ def import_activity(activity_id, enabled_types=None):
 		"end_time": 1755910466,
 		"apple_watch": False,
 		"wearos_watch": False,
-		"is_private": True,
+		"is_private": not _is_production(),
 		"is_biometrics_public": True
 	  },
 	  "share_to_strava": False,
