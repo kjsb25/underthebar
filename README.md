@@ -69,9 +69,30 @@ Graphs are saved as images in the user data folder. To redraw when you have new 
 
 Sure, dynamic and interactive graphs would be better... but this works for me for now.
 
+## Building a release
+
+Run the export script from the project directory:
+
+```
+python export.py
+```
+
+This will:
+1. Verify you are on the `main` branch with a clean working directory
+2. Build a single executable using PyInstaller
+
+Output: `dist/underthebar` (Linux/Mac) or `dist/underthebar.exe` (Windows)
+
+To build without the branch check (development builds):
+
+```
+python export.py --skip-branch-check
+```
+
+Requires `pyinstaller` to be installed: `pip install pyinstaller`
+
 ## Notes for self
 pyinstaller
 - Had to add this to one plot file to get matplotlib to work correctly, error about including svg engine.
     - import matplotlib
     - matplotlib.use("svg")
-- pyinstaller --onefile --windowed --icon=icons\dumbbell-solid.ico --add-data="icons;icons" underthebar.py
