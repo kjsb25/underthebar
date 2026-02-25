@@ -205,7 +205,7 @@ def login(user, password):
 	# Post username and password to Hevy
 	s = requests.Session()
 
-	r = s.post('https://api.hevyapp.com/login', data=json.dumps({'emailOrUsername':user,'password':password}), headers=headers)
+	r = s.post('https://api.hevyapp.com/login', json={'emailOrUsername':user,'password':password}, headers=headers)
 	print(r.status_code)
 
 	if r.status_code == 200:
@@ -267,7 +267,7 @@ def login(user, password):
 			print("Obtaining account details failed...")
 			return r.status_code
 	else:
-		print("Login failed...")
+		print("Login failed...", r.text)
 		return r.status_code
 
 #
