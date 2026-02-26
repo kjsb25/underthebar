@@ -203,6 +203,8 @@ def login(user, password):
 	headers = BASIC_HEADERS.copy()
 
 	# Post username and password to Hevy
+	# /login uses a different x-api-key than the rest of the API
+	headers['x-api-key'] = 'shelobs_hevy_web'
 	s = requests.Session()
 
 	r = s.post('https://api.hevyapp.com/login', json={'emailOrUsername':user,'password':password}, headers=headers)
