@@ -26,6 +26,23 @@ Stuff I'm using to make this work for me:
 
 A username and password is required. If you don't log in to Hevy like this I've been told it can be generated with a password reset.
 
+## Setup
+
+Install [uv](https://github.com/astral-sh/uv) if you don't have it:
+
+```
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then run the setup script to create a virtual environment with the correct Python version and install dependencies:
+
+```
+./setup_venv.sh
+source .venv/bin/activate
+```
+
+The required Python version is read from `.python-version` (currently 3.12).
+
 ## To run it
 Execute the python file "underthebar.py" (Windows users can download latest pre-built [release](https://github.com/SteveG/underthebar/releases) and run that)
 - It should prompt you to log in to Hevy
