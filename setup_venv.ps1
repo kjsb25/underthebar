@@ -7,6 +7,10 @@ $ErrorActionPreference = "Stop"
 
 Set-Location $PSScriptRoot
 
+# Refresh PATH from the machine/user environment in case uv was just installed
+$env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
+            [System.Environment]::GetEnvironmentVariable("PATH", "User")
+
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     Write-Error "Error: 'uv' is not installed.`nInstall it with: powershell -c `"irm https://astral.sh/uv/install.ps1 | iex`"`nOr see: https://github.com/astral-sh/uv"
     exit 1
