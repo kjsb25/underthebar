@@ -118,13 +118,12 @@ def temp_login(old_access_token, old_refresh_token):
 # Temporary work around method of logging in - this will check firefox cookies and take the firefox hevy session
 # Returns True if all successful
 #	
-import browsercookie
+import browser_cookie3
 import urllib.parse
 def cookie_login():
-	cj = browsercookie.firefox()
+	cj = browser_cookie3.load(domain_name='hevy.com')
 	for cookie in cj:
 		if cookie.domain == "hevy.com" and cookie.name == "auth2.0-token":
-			#print(cookie.value)
 			cookie_json = json.loads(urllib.parse.unquote(cookie.value))
 			login = temp_login(cookie_json["access_token"], cookie_json["refresh_token"])
 			if login == 200:
@@ -132,7 +131,7 @@ def cookie_login():
 				return True
 			else:
 				print("failed login via cookie search")
-	return False			
+	return False
 #
 # Takes the old Hevy access tokens and requests new access tokens
 #
