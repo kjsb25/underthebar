@@ -194,34 +194,33 @@ class Login(QtWidgets.QDialog):
 
 		self.logo = QtSvgWidgets.QSvgWidget(self.script_folder+"/icons/hevy-logo.svg")
 		self.textName = QtWidgets.QLineEdit(self)
-		self.textName.setPlaceholderText("Username")
+		self.textName.setPlaceholderText("access_token")
 		self.textName.setAlignment(QtCore.Qt.AlignCenter)
 		self.textPass = QtWidgets.QLineEdit(self)
-		self.textPass.setPlaceholderText("Password")
+		self.textPass.setPlaceholderText("refresh_token")
 		self.textPass.setEchoMode(QtWidgets.QLineEdit.Password)
 		self.textPass.setAlignment(QtCore.Qt.AlignCenter)
-		self.buttonLogin = QtWidgets.QPushButton('Login', self)
+		self.buttonLogin = QtWidgets.QPushButton('Login with tokens', self)
 		self.buttonLogin.clicked.connect(self.handleLogin)
 		self.buttonAutoLogin = QtWidgets.QPushButton('Auto Firefox Cookie Login', self)
 		self.buttonAutoLogin.clicked.connect(self.handleAutoLogin)
-		
+
 		layout = QtWidgets.QVBoxLayout(self)
 		layout.addWidget(QtWidgets.QLabel('''<p align=center><u><font size="60">═|██══</font><font size="20">UNDER THE BAR</font><font size="60">══██|═</font></u><br><font size="2">powered by Hevy</font></p>'''))
-		layout.addWidget(QtWidgets.QLabel('''<p align=center>To use Under The Bar you first need to log in to Hevy.</p> <p align=center>Enter your username and password below.</p><p> </p><p> </p>'''))
 		layout.addWidget(self.logo)
+		layout.addWidget(QtWidgets.QLabel('''<p align=center><b>Log in via Firefox (recommended)</b></p><p align=center>Log in to Hevy in Firefox, close Firefox, then click below.</p><p> </p>'''))
+		layout.addWidget(self.buttonAutoLogin)
+		layout.addWidget(QtWidgets.QLabel('''<p> </p><p align=center><b>Log in with tokens (manual)</b></p><p align=center>Log in to <a href="https://hevy.com">hevy.com</a> in a browser, open DevTools, find the <b>auth2.0-token</b> cookie, and paste the <b>access_token</b> and <b>refresh_token</b> values below.</p><p> </p>'''))
 		layout.addWidget(self.textName)
 		layout.addWidget(self.textPass)
 		layout.addWidget(self.buttonLogin)
-		
-		layout.addWidget(QtWidgets.QLabel('''<p> </p><p> </p><p align=center>Or try our auto Firefox cookie find and login. Close Firefox first.</p> '''))
-		layout.addWidget(self.buttonAutoLogin)
 
 	def handleLogin(self):
 		username = self.textName.text()
 		password = self.textPass.text()
 		self.buttonLogin.setIcon(self.loadIcon(self.script_folder+"/icons/spinner-solid.svg"))
 		self.buttonLogin.repaint()
-		logged_in = hevy_api.login(username,password)
+		logged_in = hevy_api.temp_login(username, password)
 		if logged_in ==200:
 			self.accept()
 		else:
