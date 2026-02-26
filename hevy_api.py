@@ -208,7 +208,10 @@ def login(user, password):
 	s = requests.Session()
 
 	r = s.post('https://api.hevyapp.com/login', json={'emailOrUsername':user,'password':password}, headers=headers)
-	print(r.status_code)
+	print("login status:", r.status_code)
+	print("login request headers:", r.request.headers)
+	print("login request body:", r.request.body)
+	print("login response body:", r.text)
 
 	if r.status_code == 200:
 		json_content = r.json()
