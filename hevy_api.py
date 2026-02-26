@@ -115,22 +115,35 @@ def temp_login(old_access_token, old_refresh_token):
 		return r.status_code
 
 #
-# Temporary work around method of logging in - this will check firefox cookies and take the firefox hevy session
+# Checks browser cookies across all available browsers and logs in using the Hevy session cookie
 # Returns True if all successful
-#	
+#
 import browser_cookie3
 import urllib.parse
 def cookie_login():
-	cj = browser_cookie3.load(domain_name='hevy.com')
-	for cookie in cj:
-		if cookie.domain == "hevy.com" and cookie.name == "auth2.0-token":
-			cookie_json = json.loads(urllib.parse.unquote(cookie.value))
-			login = temp_login(cookie_json["access_token"], cookie_json["refresh_token"])
-			if login == 200:
-				print("successful login via cookie search")
-				return True
-			else:
-				print("failed login via cookie search")
+	browser_fns = [
+		browser_cookie3.firefox,
+		browser_cookie3.chrome,
+		browser_cookie3.edge,
+		browser_cookie3.brave,
+		browser_cookie3.chromium,
+		browser_cookie3.vivaldi,
+		browser_cookie3.opera,
+	]
+	for browser_fn in browser_fns:
+		try:
+			cj = browser_fn(domain_name='hevy.com')
+			for cookie in cj:
+				if cookie.domain == "hevy.com" and cookie.name == "auth2.0-token":
+					cookie_json = json.loads(urllib.parse.unquote(cookie.value))
+					login = temp_login(cookie_json["access_token"], cookie_json["refresh_token"])
+					if login == 200:
+						print("successful login via cookie search ({})".format(browser_fn.__name__))
+						return True
+					else:
+						print("failed login via cookie search ({})".format(browser_fn.__name__))
+		except Exception as e:
+			print("skipping {} ({})".format(browser_fn.__name__, e))
 	return False
 #
 # Takes the old Hevy access tokens and requests new access tokens
