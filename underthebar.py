@@ -140,6 +140,12 @@ class UnderTheBar(QMainWindow):
 		ic = QIcon(img)
 		return ic
 
+	def resizeEvent(self, event):
+		super().resizeEvent(event)
+		current = self.stacklayout.currentWidget()
+		if current is not None:
+			current.resize(current.width(), current.height())
+
 	def activate_profile(self):
 		self.stacklayout.widget(0).do_update()
 		self.stacklayout.setCurrentIndex(0)

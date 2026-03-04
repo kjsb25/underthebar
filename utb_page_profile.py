@@ -24,6 +24,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QVBoxLayout,
     QGridLayout,
+    QStackedWidget,
+    QTabWidget,
     QWidget,
     QListWidget,
     QAbstractItemView,
@@ -59,8 +61,9 @@ class Profile(QWidget):
 		
 		
 		self.pool = QThreadPool()
+		self._narrow_mode = None
 		self.initialised = False
-	
+
 	def initialise(self):
 		#print("Drawing profile page")
 		self.deleteItemsOfLayout(self.layout())
@@ -129,7 +132,7 @@ class Profile(QWidget):
 			script_folder = os.path.split(os.path.abspath(__file__))[0]
 			pixmap = QPixmap(script_folder+"/icons/user-solid.svg").scaled(250,250)
 			self.piclabel.setPixmap(pixmap)
-		self.piclabel.setFixedSize(250,250)
+		self.piclabel.setMaximumSize(250,250)
 		toplayout.addWidget(self.piclabel)
 	
 		detailslayout = QVBoxLayout()
@@ -144,7 +147,7 @@ class Profile(QWidget):
 		detailsgrid.addWidget(QLabel("<b>Description:</b>"), 2,0, Qt.AlignTop)
 		self.detailLabel = QLabel(account_data["data"]["description"])
 		self.detailLabel.setWordWrap(True)
-		self.detailLabel.setFixedWidth(300)
+		self.detailLabel.setMaximumWidth(400)
 		detailsgrid.addWidget(self.detailLabel, 2,1)
 		detailsgrid.addWidget(QLabel("<b>Followers:</b>"), 3,0)
 		self.followersLabel = QLabel(str(account_data["data"]["follower_count"]))
@@ -171,15 +174,12 @@ class Profile(QWidget):
 		
 		
 		# lower layout with feed and stuff
-		bottomlayout = QHBoxLayout()
-		feedlayout = QVBoxLayout()
-		feedbuttonlayout = QHBoxLayout()
-		feedbuttonlayout.setSizeConstraint(QLayout.SetMaximumSize)
-		
+
+		# Build feed panel widgets
 		feedlabel = QtSvgWidgets.QSvgWidget(self.script_folder+"/icons/hevy-logo.svg")
 		feedlabel.setFixedWidth(80)
 		feedlabel.setFixedHeight(19)
-		self.feedreloadbutton = QPushButton()# "Reload feed")
+		self.feedreloadbutton = QPushButton()
 		self.feedreloadbutton.setIcon(self.loadIcon(self.script_folder+"/icons/arrows-rotate-solid.svg"))
 		self.feedreloadbutton.setFixedWidth(50)
 		self.feedreloadbutton.clicked.connect(self.feed_reload_button)
@@ -187,7 +187,7 @@ class Profile(QWidget):
 		self.feedloadbutton.setIcon(self.loadIcon(self.script_folder+"/icons/plus-solid.svg"))
 		self.feedloadbutton.setFixedWidth(50)
 		self.feedloadbutton.clicked.connect(self.feed_load_button)
-		
+
 		### NEW filter combo box for the calendar
 		self.filterCombo = QComboBox()
 		self.filterCombo.setFixedHeight(27)
@@ -195,93 +195,103 @@ class Profile(QWidget):
 		self.filterCombo.addItem("Load")
 		self.filterCombo.currentIndexChanged.connect(self.filterChanged)
 		###
+		# Wrap toolbar in a widget so it can be shared between wide and narrow layouts
+		self.feedToolbar = QWidget()
+		feedbuttonlayout = QHBoxLayout(self.feedToolbar)
+		feedbuttonlayout.setContentsMargins(0, 0, 0, 0)
+		feedbuttonlayout.setSizeConstraint(QLayout.SetMaximumSize)
 		feedbuttonlayout.addWidget(feedlabel)
 		feedbuttonlayout.addWidget(self.feedreloadbutton)
 		feedbuttonlayout.addWidget(self.feedloadbutton)
 		feedbuttonlayout.addWidget(self.filterCombo)
-		#feedbuttonlayout.addStretch(10)
-		feedlayout.addLayout(feedbuttonlayout)
-		
+
 		self.feedList = QListWidget()
-		self.feedList.setFixedWidth(300)
+		self.feedList.setMinimumWidth(150)
 		self.feedList.setSelectionMode(QAbstractItemView.NoSelection)
 		self.feedList.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
 		self.feedList.setAlternatingRowColors(True)
 		self.feedList.setFocusPolicy(Qt.NoFocus);
 		self.feedList.verticalScrollBar().setSingleStep(15)
-		self.feedList.verticalScrollBar().valueChanged.connect(self.feedScrollChanged) 
-		feedlayout.addWidget(self.feedList)
-		
-		bottomlayout.addLayout(feedlayout)
-		
-		bottomrightlayout = QVBoxLayout()
+		self.feedList.verticalScrollBar().valueChanged.connect(self.feedScrollChanged)
+
+		# Build calendar widget
 		self.calendarWidget = QTableWidget(8,53)
 		self.calendarWidget.horizontalHeader().hide()
 		self.calendarWidget.horizontalHeader().setMinimumSectionSize(1)
-		#calendarWidget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents);
 		self.calendarWidget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch);
 		self.calendarWidget.verticalHeader().hide()
 		self.calendarWidget.verticalHeader().setMinimumSectionSize(1)
 		self.calendarWidget.verticalHeader().setSectionResizeMode(QHeaderView.Stretch);
 		self.calendarWidget.setMaximumHeight(100)
-		
 		self.calendarWidget.setSelectionBehavior( QAbstractItemView.SelectItems );
 		self.calendarWidget.setSelectionMode( QAbstractItemView.SingleSelection );
 		self.calendarWidget.itemSelectionChanged.connect(self.calendar_selection)
-		bottomrightlayout.addWidget(self.calendarWidget)
-		#bottomrightlayout.addStretch()
-		
-		bottomcornerlayout = QHBoxLayout()
 
-
+		# Build own/measures/records list widgets
 		self.ownList = QListWidget()
-		self.ownList.setFixedWidth(300)
+		self.ownList.setMinimumWidth(150)
 		self.ownList.setSelectionMode(QAbstractItemView.NoSelection)
 		self.ownList.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
 		self.ownList.setAlternatingRowColors(False)
 		self.ownList.setFocusPolicy(Qt.NoFocus);
 		self.ownList.verticalScrollBar().setSingleStep(15)
-		bottomcornerlayout.addWidget(self.ownList)
-		
-		bottomcornerlayout.addStretch()
+		self.ownList.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
 		self.measureList = QListWidget()
-		self.measureList.setFixedWidth(300)
+		self.measureList.setMinimumWidth(150)
 		self.measureList.setSelectionMode(QAbstractItemView.NoSelection)
 		self.measureList.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
-		#self.measureList.setAlternatingRowColors(True)
 		self.measureList.setFocusPolicy(Qt.NoFocus);
 		self.measureList.verticalScrollBar().setSingleStep(15)
-		bottomcornerlayout.addWidget(self.measureList)
-		
-		bottomcornerlayout.addStretch()
+		self.measureList.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
 		self.recordList = QListWidget()
-		self.recordList.setFixedWidth(300)
+		self.recordList.setMinimumWidth(150)
 		self.recordList.setSelectionMode(QAbstractItemView.NoSelection)
 		self.recordList.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
-		#self.recordList.setAlternatingRowColors(True)
 		self.recordList.setFocusPolicy(Qt.NoFocus);
 		self.recordList.verticalScrollBar().setSingleStep(15)
-		bottomcornerlayout.addWidget(self.recordList)
-		
-		# Change appearance of scroll bars
-		#self.ownList.verticalScrollBar().setVisible(False)
-		self.ownList.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-		self.measureList.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 		self.recordList.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-		#self.ownList.verticalScrollBar().hide()
-		#self.ownList.verticalScrollBar().resize(2, 2)
-		
-		
-		
-		#bottomcornerlayout.addStretch()
-		
-		
-		
-		
-		
-		
-		
-		bottomrightlayout.addLayout(bottomcornerlayout)
+
+		# Build wide view containers
+		self._wideView = QWidget()
+		wideLayout = QHBoxLayout(self._wideView)
+		wideLayout.setContentsMargins(0, 0, 0, 0)
+		self._wideFeedCol = QWidget()
+		self._wideFeedCol.setLayout(QVBoxLayout())
+		self._wideFeedCol.layout().setContentsMargins(0, 0, 0, 0)
+		self._wideRightCol = QWidget()
+		self._wideRightCol.setLayout(QVBoxLayout())
+		self._wideRightCol.layout().setContentsMargins(0, 0, 0, 0)
+		self._wideCornerRow = QWidget()
+		self._wideCornerRow.setLayout(QHBoxLayout())
+		self._wideCornerRow.layout().setContentsMargins(0, 0, 0, 0)
+		self._wideRightCol.layout().addWidget(self.calendarWidget)
+		self._wideRightCol.layout().addWidget(self._wideCornerRow)
+		wideLayout.addWidget(self._wideFeedCol)
+		wideLayout.addWidget(self._wideRightCol)
+
+		# Build narrow view (QTabWidget with tab page containers)
+		self._narrowView = QTabWidget()
+		self._narrowFeedTab = QWidget()
+		self._narrowFeedTab.setLayout(QVBoxLayout())
+		self._narrowWorkoutsTab = QWidget()
+		self._narrowWorkoutsTab.setLayout(QVBoxLayout())
+		self._narrowMeasuresTab = QWidget()
+		self._narrowMeasuresTab.setLayout(QVBoxLayout())
+		self._narrowRecordsTab = QWidget()
+		self._narrowRecordsTab.setLayout(QVBoxLayout())
+		self._narrowView.addTab(self._narrowFeedTab, "Feed")
+		self._narrowView.addTab(self._narrowWorkoutsTab, "Workouts")
+		self._narrowView.addTab(self._narrowMeasuresTab, "Measures")
+		self._narrowView.addTab(self._narrowRecordsTab, "Records")
+
+		# Stack to switch between wide and narrow
+		self._stack = QStackedWidget()
+		self._stack.addWidget(self._wideView)    # index 0 = wide
+		self._stack.addWidget(self._narrowView)  # index 1 = narrow
+
+
 		
 		
 		# populate calendar with dates, starting at day 0 of 52 weeks ago TODO is this too much work for this thread?
@@ -376,14 +386,61 @@ class Profile(QWidget):
 		self.calendarWidget.setSpan(0, week_month_start, 1, 53-week_month_start)
 		
 		
-		bottomlayout.addLayout(bottomrightlayout)
-		#bottomlayout.addStretch()
-		
-		self.layout().addLayout(bottomlayout)
-		
+		self.layout().addWidget(self._stack)
+
 		self.feed_last_index = 0
-		
+
 		self.initialised = True
+
+		# Apply layout based on current size
+		self._apply_layout(self.width() < 900)
+
+	@staticmethod
+	def _drain_layout(widget):
+		"""Remove all items from widget's layout without destroying widgets."""
+		layout = widget.layout()
+		if layout:
+			while layout.count():
+				layout.takeAt(0)
+
+	def _apply_layout(self, narrow):
+		if narrow == self._narrow_mode:
+			return
+		self._narrow_mode = narrow
+
+		if narrow:
+			# Clear narrow tab destinations then reparent widgets into them
+			self._drain_layout(self._narrowFeedTab)
+			self._drain_layout(self._narrowWorkoutsTab)
+			self._drain_layout(self._narrowMeasuresTab)
+			self._drain_layout(self._narrowRecordsTab)
+			self._narrowFeedTab.layout().addWidget(self.feedToolbar)
+			self._narrowFeedTab.layout().addWidget(self.feedList)
+			self._narrowWorkoutsTab.layout().addWidget(self.calendarWidget)
+			self._narrowWorkoutsTab.layout().addWidget(self.ownList)
+			self._narrowMeasuresTab.layout().addWidget(self.measureList)
+			self._narrowRecordsTab.layout().addWidget(self.recordList)
+			self._stack.setCurrentIndex(1)
+		else:
+			# Clear wide column destinations then reparent widgets into them
+			self._drain_layout(self._wideFeedCol)
+			self._drain_layout(self._wideRightCol)
+			self._drain_layout(self._wideCornerRow)
+			self._wideFeedCol.layout().addWidget(self.feedToolbar)
+			self._wideFeedCol.layout().addWidget(self.feedList)
+			self._wideRightCol.layout().addWidget(self.calendarWidget)
+			self._wideRightCol.layout().addWidget(self._wideCornerRow)
+			self._wideCornerRow.layout().addWidget(self.ownList)
+			self._wideCornerRow.layout().addStretch()
+			self._wideCornerRow.layout().addWidget(self.measureList)
+			self._wideCornerRow.layout().addStretch()
+			self._wideCornerRow.layout().addWidget(self.recordList)
+			self._stack.setCurrentIndex(0)
+
+	def resizeEvent(self, event):
+		super().resizeEvent(event)
+		if self.initialised:
+			self._apply_layout(event.size().width() < 900)
 
 	def do_update(self):
 		print("updating")
