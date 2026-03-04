@@ -43,6 +43,8 @@ STRAVA_SETTINGS_KEY = "strava-activity-type-filters"
 #
 class Setting(QWidget):
 
+	logout_requested = Signal()
+
 	def __init__(self, color):
 		super(Setting, self).__init__()
 		home_folder = str(Path.home())
@@ -238,13 +240,24 @@ class Setting(QWidget):
 
 		# ── Logout ────────────────────────────────────────────────────────
 		detailslayout.addWidget(QLabel("\n"))
-		self.log_out_button = QPushButton("Logout and Quit")
+		logout_buttons_layout = QHBoxLayout()
+		self.log_out_button = QPushButton("Logout")
 		self.log_out_button.setFixedWidth(200)
-		self.log_out_button.clicked.connect(self.log_out_quit)
-		detailslayout.addWidget(self.log_out_button)
+		self.log_out_button.clicked.connect(self.log_out)
+		logout_buttons_layout.addWidget(self.log_out_button)
+		self.log_out_quit_button = QPushButton("Logout and Quit")
+		self.log_out_quit_button.setFixedWidth(200)
+		self.log_out_quit_button.clicked.connect(self.log_out_quit)
+		logout_buttons_layout.addWidget(self.log_out_quit_button)
+		logout_buttons_layout.addStretch()
+		detailslayout.addLayout(logout_buttons_layout)
 
 		self.pool = QThreadPool()
 		self.pool.setMaxThreadCount(5)
+
+	def log_out(self):
+		hevy_api.logout()
+		self.logout_requested.emit()
 
 	def log_out_quit(self):
 		print("Quitting...")
