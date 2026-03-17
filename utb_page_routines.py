@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QHBoxLayout,
     QVBoxLayout,
+    QStackedWidget,
+    QTabWidget,
     QWidget,
     QListWidget,
     QPlainTextEdit,
@@ -34,9 +36,10 @@ class Routines(QWidget):
 
 	def __init__(self, color):
 		super(Routines, self).__init__()
-		pagelayout = QHBoxLayout()
+		pagelayout = QVBoxLayout()
 		self.setLayout(pagelayout)
-		
+
+		self._narrow_mode = None  # None = not yet determined
 		self.initialised = False
 
 
@@ -57,59 +60,37 @@ class Routines(QWidget):
 		
 		
 		#
-		# on the left is a list routines
+		# Build all widgets first (shared between wide and narrow layouts)
 		#
-		workoutslayout = QVBoxLayout()
-		self.layout().addLayout(workoutslayout)
-		#pagelayout.addStretch()
 
-		
+		# Left panel: routines list + reload/garmin buttons
 		self.workoutList = QListWidget()
-		
-		self.workoutList.setFixedWidth(300)
+		self.workoutList.setMinimumWidth(150)
 		self.workoutList.setSpacing(2)
 		self.workoutList.setAlternatingRowColors(True)
 		self.workoutList.currentRowChanged.connect(self.workoutListRowChanged)
 		self.workoutList.itemDoubleClicked.connect(self.workoutDoubleClicked)
-		
-		
-		#self.workoutList.installEventFilter(self)
-		
-		workoutslayout.addWidget(self.workoutList)
-		
-		#
-		# Reload button below workout list   AND GARMIN TRANSLATE
-		#
+
 		self.reloadButton = QPushButton("Reload from Hevy")
 		self.garminButton = QPushButton("Garmin")
 		self.garminButton.setVisible(False)
-		#self.reloadButton.clicked.connect(self.reloadButtonClicked)
 		self.reloadButton.clicked.connect(lambda *args, x="routines_sync_batch": self.batch_button_pushed(x))
 		self.garminButton.clicked.connect(self.garminButtonClicked)
 		self.statusText = QLabel()
-		sublayout = QHBoxLayout()
+		# Wrap in a widget so it can be shared between wide and narrow layouts
+		self.reloadToolbar = QWidget()
+		sublayout = QHBoxLayout(self.reloadToolbar)
+		sublayout.setContentsMargins(0, 0, 0, 0)
 		sublayout.addWidget(self.reloadButton)
 		sublayout.addWidget(self.statusText)
 		sublayout.addWidget(self.garminButton)
-		workoutslayout.addLayout(sublayout)
-		
-		#
-		# front and centre is the routine text editor, such a silly idea
-		#
-		editorLayout = QVBoxLayout()
+
+		# Centre panel: routine text editor + action buttons
 		self.routineEditor = QPlainTextEdit()
-		#self.routineEditor.setFont(QFont("monospace"));
-		
-		editorLayout.addWidget(self.routineEditor)
-		self.layout().addLayout(editorLayout)
-		
-		#
-		# buttons under the editor
-		#
+
 		self.editorButtons = QGroupBox()
 		self.editorButtons.setFlat(True)
 		self.editorButtons.setStyleSheet("QGroupBox {border:0;padding:0;margin:0;}");
-		
 		buttonLayout = QHBoxLayout()
 		buttonLayout.setContentsMargins(0,0,0,0)
 		self.editorButtons.setLayout(buttonLayout)
@@ -125,51 +106,111 @@ class Routines(QWidget):
 		buttonLayout.addWidget(discardButton)
 		buttonLayout.addWidget(self.pushButton)
 		buttonLayout.addWidget(deleteButton)
-		editorLayout.addWidget(self.editorButtons)
-		
 		self.editorButtons.setVisible(False)
-		#self.editorButtons.setVisible(True)
-		
-		#
-		# on the right is a list of exercises previously used
-		#
-		exerciseslayout = QVBoxLayout()
-		self.layout().addLayout(exerciseslayout)
-		
+
+		# Right panel: exercises list + detail view
 		self.exercisesList = QListWidget()
-		self.exercisesList.setFixedWidth(300)
+		self.exercisesList.setMinimumWidth(150)
 		self.exercisesList.setSpacing(2)
 		self.exercisesList.setAlternatingRowColors(True)
 		self.exercisesList.currentRowChanged.connect(self.exercisesListRowChanged)
-		#self.exercisesList.itemDoubleClicked.connect(self.exercisesDoubleClicked)
-		#self.exercisesList.addItem("--insert superset--\n")
-		#self.exercisesList.item(0).setTextAlignment(Qt.AlignHCenter)
-		exerciseslayout.addWidget(self.exercisesList)
-		
-		self.exercisesView = QPlainTextEdit()
-		self.exercisesView.setFixedWidth(300)
-		self.exercisesView.setFixedHeight(300)
-		self.exercisesView.setReadOnly(True)
-		exerciseslayout.addWidget(self.exercisesView)
 
-	
-		
+		self.exercisesView = QPlainTextEdit()
+		self.exercisesView.setReadOnly(True)
+
+		# Build wide view columns (each is a QWidget with QVBoxLayout)
+		self._wideView = QWidget()
+		wideLayout = QHBoxLayout(self._wideView)
+		wideLayout.setContentsMargins(0, 0, 0, 0)
+		self._wideLeftCol = QWidget()
+		self._wideLeftCol.setLayout(QVBoxLayout())
+		self._wideLeftCol.layout().setContentsMargins(0, 0, 0, 0)
+		self._wideCenterCol = QWidget()
+		self._wideCenterCol.setLayout(QVBoxLayout())
+		self._wideCenterCol.layout().setContentsMargins(0, 0, 0, 0)
+		self._wideRightCol = QWidget()
+		self._wideRightCol.setLayout(QVBoxLayout())
+		self._wideRightCol.layout().setContentsMargins(0, 0, 0, 0)
+		wideLayout.addWidget(self._wideLeftCol)
+		wideLayout.addWidget(self._wideCenterCol)
+		wideLayout.addWidget(self._wideRightCol)
+
+		# Build narrow view (QTabWidget with tab pages)
+		self._narrowView = QTabWidget()
+		self._narrowRoutinesTab = QWidget()
+		self._narrowRoutinesTab.setLayout(QVBoxLayout())
+		self._narrowEditorTab = QWidget()
+		self._narrowEditorTab.setLayout(QVBoxLayout())
+		self._narrowExercisesTab = QWidget()
+		self._narrowExercisesTab.setLayout(QVBoxLayout())
+		self._narrowView.addTab(self._narrowRoutinesTab, "Routines")
+		self._narrowView.addTab(self._narrowEditorTab, "Editor")
+		self._narrowView.addTab(self._narrowExercisesTab, "Exercises")
+
+		# Stack to switch between wide and narrow
+		self._stack = QStackedWidget()
+		self._stack.addWidget(self._wideView)    # index 0 = wide
+		self._stack.addWidget(self._narrowView)  # index 1 = narrow
+		self.layout().addWidget(self._stack)
+
 		self.populate_lists()
 
-		
-
-		
 		self.pool = QThreadPool()
 		self.pool.setMaxThreadCount(5)
-		
 
 		self.initialised = True
 		self.workoutList.setCurrentRow(0)
-		
+
+		# Apply layout based on current size
+		self._apply_layout(self.width() < 900)
+
 
 	def do_update(self):
 		if not self.initialised:
 			self.initialise()
+
+	@staticmethod
+	def _drain_layout(widget):
+		"""Remove all items from widget's layout without destroying widgets."""
+		layout = widget.layout()
+		if layout:
+			while layout.count():
+				layout.takeAt(0)
+
+	def _apply_layout(self, narrow):
+		if narrow == self._narrow_mode:
+			return
+		self._narrow_mode = narrow
+
+		if narrow:
+			# Clear destination containers, then move widgets into narrow tabs
+			self._drain_layout(self._narrowRoutinesTab)
+			self._drain_layout(self._narrowEditorTab)
+			self._drain_layout(self._narrowExercisesTab)
+			self._narrowRoutinesTab.layout().addWidget(self.workoutList)
+			self._narrowRoutinesTab.layout().addWidget(self.reloadToolbar)
+			self._narrowEditorTab.layout().addWidget(self.routineEditor)
+			self._narrowEditorTab.layout().addWidget(self.editorButtons)
+			self._narrowExercisesTab.layout().addWidget(self.exercisesList)
+			self._narrowExercisesTab.layout().addWidget(self.exercisesView)
+			self._stack.setCurrentIndex(1)
+		else:
+			# Clear destination containers, then move widgets into wide columns
+			self._drain_layout(self._wideLeftCol)
+			self._drain_layout(self._wideCenterCol)
+			self._drain_layout(self._wideRightCol)
+			self._wideLeftCol.layout().addWidget(self.workoutList)
+			self._wideLeftCol.layout().addWidget(self.reloadToolbar)
+			self._wideCenterCol.layout().addWidget(self.routineEditor)
+			self._wideCenterCol.layout().addWidget(self.editorButtons)
+			self._wideRightCol.layout().addWidget(self.exercisesList)
+			self._wideRightCol.layout().addWidget(self.exercisesView)
+			self._stack.setCurrentIndex(0)
+
+	def resizeEvent(self, event):
+		super().resizeEvent(event)
+		if self.initialised:
+			self._apply_layout(event.size().width() < 900)
 	
 	def populate_lists(self):
 		#

@@ -89,7 +89,8 @@ class Analysis(QWidget):
 
 		
 		self.graphList = QListWidget()
-		self.graphList.setFixedWidth(200)
+		self.graphList.setMinimumWidth(150)
+		self.graphList.setMaximumWidth(300)
 		self.graphList.currentRowChanged.connect(self.graphListRowChanged)
 		self.graphList.addItem("Body Measures")
 		self.graphList.addItem("Body Part Radar")
@@ -113,7 +114,8 @@ class Analysis(QWidget):
 		sidelayout.addWidget(self.graphList)
 		
 		self.optionList = QListWidget()
-		self.optionList.setFixedWidth(200)
+		self.optionList.setMinimumWidth(150)
+		self.optionList.setMaximumWidth(300)
 		self.optionList.currentRowChanged.connect(self.optionListRowChanged)
 		#self.optionList.addItem("Fishing")
 		#self.optionList.addItem("Not Fishing")

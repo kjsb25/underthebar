@@ -25,6 +25,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QVBoxLayout,
     QGridLayout,
+    QStackedWidget,
+    QTabWidget,
     QWidget,
     QListWidget,
 	QListWidgetItem,
@@ -62,8 +64,9 @@ class Social(QWidget):
 		
 		
 		self.pool = QThreadPool()
+		self._narrow_mode = None
 		self.initialised = False
-	
+
 	def initialise(self):
 		#print("Drawing profile page")
 		self.deleteItemsOfLayout(self.layout())
@@ -136,19 +139,16 @@ class Social(QWidget):
 		
 		
 		# lower layout with feed and stuff
-		bottomlayout = QHBoxLayout()
-		feedlayout = QVBoxLayout()
-		feedbuttonlayout = QHBoxLayout()
-		feedbuttonlayout.setSizeConstraint(QLayout.SetMaximumSize)
-		
+
+		# Build toolbar widgets
 		feedlabel = QtSvgWidgets.QSvgWidget(self.script_folder+"/icons/hevy-logo.svg")
 		feedlabel.setFixedWidth(80)
 		feedlabel.setFixedHeight(19)
-		self.reloadbutton = QPushButton()# "Reload feed")
+		self.reloadbutton = QPushButton()
 		self.reloadbutton.setIcon(self.loadIcon(self.script_folder+"/icons/arrows-rotate-solid.svg"))
 		self.reloadbutton.setFixedWidth(50)
 		self.reloadbutton.clicked.connect(self.reload_button)
-		
+
 		thetip = """Welcome to the new Social page!
 
 The left column will show mutual friends, i.e. you follow each other!
@@ -166,250 +166,165 @@ Bullet pointed users in the first two columns are also in your squad.
 The changes are from when you last reloaded the data using this button"""
 
 		self.reloadbutton.setToolTip(thetip)
-		
-		self.searchbutton = QPushButton()# "Reload feed")
+
+		self.searchbutton = QPushButton()
 		self.searchbutton.setIcon(self.loadIcon(self.script_folder+"/icons/magnifying-glass-solid-full.svg"))
 		self.searchbutton.setFixedWidth(50)
 		self.searchbutton.setCheckable(True)
 		self.searchbutton.clicked.connect(self.search_button)
-		
-		
-		# self.feedloadbutton = QPushButton()
-		# self.feedloadbutton.setIcon(self.loadIcon(self.script_folder+"/icons/plus-solid.svg"))
-		# self.feedloadbutton.setFixedWidth(50)
-		# self.feedloadbutton.clicked.connect(self.feed_load_button)
-		
-		### NEW filter combo box for the calendar
-		# self.filterCombo = QComboBox()
-		# self.filterCombo.setFixedHeight(27)
-		# self.filterCombo.addItem("")
-		# self.filterCombo.addItem("Load")
-		# self.filterCombo.currentIndexChanged.connect(self.filterChanged)
-		###
+
+		# Wrap toolbar in a widget so it can be shared between wide and narrow layouts
+		self.feedToolbar = QWidget()
+		feedbuttonlayout = QHBoxLayout(self.feedToolbar)
+		feedbuttonlayout.setContentsMargins(0, 0, 0, 0)
+		feedbuttonlayout.setSizeConstraint(QLayout.SetMaximumSize)
 		feedbuttonlayout.addWidget(feedlabel)
 		feedbuttonlayout.addWidget(self.reloadbutton)
 		feedbuttonlayout.addWidget(self.searchbutton)
-		# feedbuttonlayout.addWidget(self.feedloadbutton)
-		# feedbuttonlayout.addWidget(self.filterCombo)
-		#feedbuttonlayout.addStretch(10)
-		feedlayout.addLayout(feedbuttonlayout)
-		
+
+		# Build list widgets
 		self.friendList = QListWidget()
-		self.friendList.setFixedWidth(300)
-		#self.friendList.setSelectionMode(QAbstractItemView.NoSelection)
+		self.friendList.setMinimumWidth(150)
 		self.friendList.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
 		self.friendList.setAlternatingRowColors(True)
 		self.friendList.setFocusPolicy(Qt.NoFocus);
 		self.friendList.verticalScrollBar().setSingleStep(15)
-		#self.friendList.verticalScrollBar().valueChanged.connect(self.feedScrollChanged) 
 		self.friendList.currentRowChanged.connect(self.friendListRowChanged)
-		feedlayout.addWidget(self.friendList)
-		
-		bottomlayout.addLayout(feedlayout)
-
 
 		self.followList = QListWidget()
-		self.followList.setFixedWidth(300)
-		#self.followList.setSelectionMode(QAbstractItemView.NoSelection)
+		self.followList.setMinimumWidth(150)
 		self.followList.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
 		self.followList.setAlternatingRowColors(True)
 		self.followList.setFocusPolicy(Qt.NoFocus);
 		self.followList.verticalScrollBar().setSingleStep(15)
 		self.followList.currentRowChanged.connect(self.followListRowChanged)
-		bottomlayout.addWidget(self.followList)
-
 
 		self.squadList = QListWidget()
-		self.squadList.setFixedWidth(300)
-		#self.squadList.setSelectionMode(QAbstractItemView.NoSelection)
+		self.squadList.setMinimumWidth(150)
 		self.squadList.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
 		self.squadList.setAlternatingRowColors(True)
 		self.squadList.setFocusPolicy(Qt.NoFocus);
 		self.squadList.verticalScrollBar().setSingleStep(15)
 		self.squadList.currentRowChanged.connect(self.squadListRowChanged)
-		bottomlayout.addWidget(self.squadList)
 
-
-
-		
-		bottomrightlayout = QVBoxLayout()
-		# self.calendarWidget = QTableWidget(8,12)
-		# self.calendarWidget.horizontalHeader().hide()
-		# self.calendarWidget.horizontalHeader().setMinimumSectionSize(1)
-		# #calendarWidget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents);
-		# self.calendarWidget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch);
-		# self.calendarWidget.verticalHeader().hide()
-		# self.calendarWidget.verticalHeader().setMinimumSectionSize(1)
-		# self.calendarWidget.verticalHeader().setSectionResizeMode(QHeaderView.Stretch);
-		# self.calendarWidget.setMaximumHeight(100)
-		
-		# self.calendarWidget.setSelectionBehavior( QAbstractItemView.SelectItems );
-		# self.calendarWidget.setSelectionMode( QAbstractItemView.SingleSelection );
-		# self.calendarWidget.itemSelectionChanged.connect(self.calendar_selection)
-		# bottomrightlayout.addWidget(self.calendarWidget)
-		#bottomrightlayout.addStretch()
-		
-		bottomcornerlayout = QHBoxLayout()
-
+		# Profile image label
 		self.piclabel = QLabel("image")
-#		if os.path.exists(user_folder+"/profileimage"):
-#			pixmap = QPixmap(user_folder+"/profileimage")#.scaled(250,250)
-#			pixmap = self.makeProfileImage(pixmap)
-#			self.piclabel.setPixmap(pixmap)
-#		else:
 		script_folder = os.path.split(os.path.abspath(__file__))[0]
 		pixmap = QPixmap(script_folder+"/icons/user-solid.svg").scaled(300,300)
 		self.piclabel.setPixmap(pixmap)
-		self.piclabel.setFixedSize(300,300)
+		self.piclabel.setMaximumSize(300, 300)
 
-		bottomrightlayout.addWidget(self.piclabel)
-		
-		# Follow User Button
+		# Follow button — placed in a proper layout below the image
 		self.followButton = QPushButton("Follow")
 		self.followButton.setCheckable(True)
-		self.followButton.setMaximumHeight(20)
 		self.followButton.setEnabled(False)
-		self.followButton.setParent(self.piclabel)
-		self.followButton.setGeometry(230,280,70,20)
 		self.followButton.clicked.connect(self.followButtonClicked)
-		#bottomrightlayout.addWidget(self.followButton)
-		
-		bottomcornerlayout.addStretch()
 
-		
-		bottomcornerlayout.addStretch()
+		# User feed list
 		self.feedList = QListWidget()
-		self.feedList.setFixedWidth(300)
+		self.feedList.setMinimumWidth(150)
 		self.feedList.setSelectionMode(QAbstractItemView.NoSelection)
 		self.feedList.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
 		self.feedList.setAlternatingRowColors(True)
 		self.feedList.setFocusPolicy(Qt.NoFocus);
 		self.feedList.verticalScrollBar().setSingleStep(15)
 		self.feedList.verticalScrollBar().valueChanged.connect(self.feedScrollChanged)
-		bottomcornerlayout.addWidget(self.feedList)
-		
-		# Change appearance of scroll bars
-		#self.ownList.verticalScrollBar().setVisible(False)
-		#self.ownList.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-		#self.measureList.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-		#self.recordList.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-		#self.ownList.verticalScrollBar().hide()
-		#self.ownList.verticalScrollBar().resize(2, 2)
 		
 		
 		
-		#bottomcornerlayout.addStretch()
-		
-		
-		
-		
-		
-		
-		
-		bottomrightlayout.addLayout(bottomcornerlayout)
-		
-		
-		# populate calendar with dates, starting at day 0 of 52 weeks ago TODO is this too much work for this thread?
-		cal_start_date = datetime.datetime.now().astimezone()-datetime.timedelta(weeks=11)
-		
-#		# get dates of relevant workouts
-#		fileslist = sorted(os.listdir(workouts_folder), reverse=True)
-		relevant_workout_dates = []
-#		self.relevant_workout_files = {}
-#		for file in fileslist[:9000]:
-#			match_workout = re.search('^workout_([A-Za-z0-9_-]+).json\Z',file)
-#			if match_workout:
-#				with open(workouts_folder+"/"+file, 'r') as loadfile:
-#					temp_data = json.load(loadfile)
-#					workout_date = datetime.datetime.utcfromtimestamp(temp_data["start_time"])
-#					workout_date = workout_date.replace(tzinfo=datetime.timezone.utc).astimezone()
-#					workout_date_string = workout_date.strftime("%Y-%m-%d")
-#					relevant_workout_dates.append(workout_date_string)
-#					
-#					if workout_date_string in self.relevant_workout_files.keys():
-#						self.relevant_workout_files[workout_date_string].append(file)
-#					else:
-#						self.relevant_workout_files[workout_date_string] = [file,]
-#					#print(workout_date.strftime("%Y-%m-%d"))
-#					
-#					if workout_date < (cal_start_date - datetime.timedelta(weeks=1)):
-#						break
-		
-		
-		# cal_start_day = cal_start_date.isoweekday()%7
-		# cal_start_date = cal_start_date-datetime.timedelta(days=cal_start_day)
-		# cal_start_month = cal_start_date.month
-		# cal_start_day = cal_start_date.isoweekday()%7
-		# week = 0
-		# day_count = 0
-		# prev_day = 0
-		# prev_month = -1
-		# week_month_start = 0
-		# colour_toggle = True
-		
-		# self.calendar_link={}
-		# for i in range(500):
-			# this_date = cal_start_date + datetime.timedelta(days=day_count)
-			# this_day = this_date.isoweekday()%7
-			# if this_day < prev_day:
-				# week +=1
-				# if week >=12:
-					# break
-			# if this_date.month != prev_month:
-				# #print("new month",week_month_start,week,this_day)
-				# if this_day ==0:
-					# if week !=0:
-						# self.calendarWidget.setSpan(0, week_month_start, 1, week-week_month_start)
-					# #calendarWidget.setItem(0,week_month_start,QTableWidgetItem(calendar.month_name[prev_month]))
-					# self.calendarWidget.setItem(0,week,QTableWidgetItem(calendar.month_abbr[this_date.month]))
-					# if colour_toggle:
-						# self.calendarWidget.item(0,week).setBackground(self.palette().color(QPalette.AlternateBase))
-					# else:
-						# self.calendarWidget.item(0,week).setBackground(self.palette().color(QPalette.Base))
-					# week_month_start = week
-				# else:
-					# if week != 52:
-						# self.calendarWidget.setSpan(0, week_month_start, 1, week-week_month_start+1)
-						# #calendarWidget.setItem(0,week_month_start,QTableWidgetItem(calendar.month_name[prev_month]))
-						# self.calendarWidget.setItem(0,week+1,QTableWidgetItem(calendar.month_abbr[this_date.month]))
-						# #if self.calendarWidget.item(0, week+1) != None:
-						# if colour_toggle:
-							# self.calendarWidget.item(0,week+1).setBackground(self.palette().color(QPalette.AlternateBase))
-						# else:
-							# self.calendarWidget.item(0,week+1).setBackground(self.palette().color(QPalette.Base))
-						# week_month_start = week+1
-				
-				# colour_toggle = not colour_toggle
-				# prev_month = this_date.month
-			# prev_day = this_day
-			# #self.calendarWidget.setItem(this_day+1,week,QTableWidgetItem(str(this_date.day)))
-			# self.calendarWidget.setItem(this_day+1,week,QTableWidgetItem())
-			# if self.calendarWidget.item(this_day+1,week) == None:
-				# break
-			# if this_date.strftime("%Y-%m-%d") in relevant_workout_dates:
-# #				self.calendarWidget.item(this_day+1,week).setBackground(self.palette().color(QPalette.ToolTipBase))
-# #				self.calendar_link[(this_day+1,week)]=this_date.strftime("%Y-%m-%d")
-# #				if this_date.strftime("%Y-%m-%d") == relevant_workout_dates[0]:
-# #					self.calendarWidget.setCurrentCell(this_day+1,week,QItemSelectionModel.ClearAndSelect)
-# #					#print("date of last workout",this_date.strftime("%Y-%m-%d"))
-				# pass
-			# elif colour_toggle:
-				# self.calendarWidget.item(this_day+1,week).setBackground(self.palette().color(QPalette.Base))
-			# else:
-				# self.calendarWidget.item(this_day+1,week).setBackground(self.palette().color(QPalette.AlternateBase))
-			# day_count += 1
-		# self.calendarWidget.setSpan(0, week_month_start, 1, 12-week_month_start)
-		
-		
-		bottomlayout.addLayout(bottomrightlayout)
-		#bottomlayout.addStretch()
-		
-		self.layout().addLayout(bottomlayout)
-		
+		# Build wide view column containers
+		self._wideView = QWidget()
+		wideLayout = QHBoxLayout(self._wideView)
+		wideLayout.setContentsMargins(0, 0, 0, 0)
+		self._wideFriendsCol = QWidget()
+		self._wideFriendsCol.setLayout(QVBoxLayout())
+		self._wideFriendsCol.layout().setContentsMargins(0, 0, 0, 0)
+		self._wideUserCol = QWidget()
+		self._wideUserCol.setLayout(QVBoxLayout())
+		self._wideUserCol.layout().setContentsMargins(0, 0, 0, 0)
+		wideLayout.addWidget(self._wideFriendsCol)
+		wideLayout.addWidget(self.followList)
+		wideLayout.addWidget(self.squadList)
+		wideLayout.addWidget(self._wideUserCol)
+
+		# Build narrow view (QTabWidget with tab page containers)
+		self._narrowView = QTabWidget()
+		self._narrowFriendsTab = QWidget()
+		self._narrowFriendsTab.setLayout(QVBoxLayout())
+		self._narrowFollowTab = QWidget()
+		self._narrowFollowTab.setLayout(QVBoxLayout())
+		self._narrowSquadTab = QWidget()
+		self._narrowSquadTab.setLayout(QVBoxLayout())
+		self._narrowUserTab = QWidget()
+		self._narrowUserTab.setLayout(QVBoxLayout())
+		self._narrowView.addTab(self._narrowFriendsTab, "Friends")
+		self._narrowView.addTab(self._narrowFollowTab, "Follows")
+		self._narrowView.addTab(self._narrowSquadTab, "Squad")
+		self._narrowView.addTab(self._narrowUserTab, "User")
+
+		# Stack to switch between wide and narrow
+		self._stack = QStackedWidget()
+		self._stack.addWidget(self._wideView)    # index 0 = wide
+		self._stack.addWidget(self._narrowView)  # index 1 = narrow
+		self.layout().addWidget(self._stack)
+
 		self.feed_last_index = 0
-		
+
 		self.initialised = True
+
+		# Apply layout based on current size
+		self._apply_layout(self.width() < 900)
+
 		self.do_update()
+
+	@staticmethod
+	def _drain_layout(widget):
+		"""Remove all items from widget's layout without destroying widgets."""
+		layout = widget.layout()
+		if layout:
+			while layout.count():
+				layout.takeAt(0)
+
+	def _apply_layout(self, narrow):
+		if narrow == self._narrow_mode:
+			return
+		self._narrow_mode = narrow
+
+		if narrow:
+			# Clear narrow tab destinations then reparent widgets into them
+			self._drain_layout(self._narrowFriendsTab)
+			self._drain_layout(self._narrowFollowTab)
+			self._drain_layout(self._narrowSquadTab)
+			self._drain_layout(self._narrowUserTab)
+			self._narrowFriendsTab.layout().addWidget(self.feedToolbar)
+			self._narrowFriendsTab.layout().addWidget(self.friendList)
+			self._narrowFollowTab.layout().addWidget(self.followList)
+			self._narrowSquadTab.layout().addWidget(self.squadList)
+			self._narrowUserTab.layout().addWidget(self.piclabel)
+			self._narrowUserTab.layout().addWidget(self.followButton)
+			self._narrowUserTab.layout().addWidget(self.feedList)
+			self._stack.setCurrentIndex(1)
+		else:
+			# Clear wide column destinations then reparent widgets into them
+			self._drain_layout(self._wideFriendsCol)
+			self._drain_layout(self._wideUserCol)
+			self._drain_layout(self._wideView)  # drain the top-level wideLayout
+			self._wideFriendsCol.layout().addWidget(self.feedToolbar)
+			self._wideFriendsCol.layout().addWidget(self.friendList)
+			self._wideUserCol.layout().addWidget(self.piclabel)
+			self._wideUserCol.layout().addWidget(self.followButton)
+			self._wideUserCol.layout().addWidget(self.feedList)
+			wideLayout = self._wideView.layout()
+			wideLayout.addWidget(self._wideFriendsCol)
+			wideLayout.addWidget(self.followList)
+			wideLayout.addWidget(self.squadList)
+			wideLayout.addWidget(self._wideUserCol)
+			self._stack.setCurrentIndex(0)
+
+	def resizeEvent(self, event):
+		super().resizeEvent(event)
+		if self.initialised:
+			self._apply_layout(event.size().width() < 900)
 
 	def do_update(self):
 		print("updating")
