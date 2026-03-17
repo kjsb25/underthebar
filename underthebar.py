@@ -120,7 +120,9 @@ class UnderTheBar(QMainWindow):
 		btn.setAutoExclusive(True);
 		btn.pressed.connect(self.activate_settings)
 		button_layout.addWidget(btn)
-		self.stacklayout.addWidget(Setting("orange"))
+		settings_page = Setting("orange")
+		settings_page.logout_requested.connect(self.handle_logout)
+		self.stacklayout.addWidget(settings_page)
 
 
 		# profile default display so update it
@@ -160,6 +162,16 @@ class UnderTheBar(QMainWindow):
 
 	def activate_settings(self):
 		self.stacklayout.setCurrentIndex(4)
+
+	def handle_logout(self):
+		self.hide()
+		login = Login(self)
+		if login.exec_() == QtWidgets.QDialog.Accepted:
+			self.stacklayout.widget(0).do_update()
+			self.stacklayout.setCurrentIndex(0)
+			self.show()
+		else:
+			sys.exit()
 		
 		
 
