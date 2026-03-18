@@ -204,13 +204,16 @@ def get_recent_activities(enabled_types=None):
 	return 200, matching
 
 
-def import_activity(activity_id, enabled_types=None):
+def import_activity(activity_id, enabled_types=None, is_private=None):
 	"""
 	Import a specific Strava activity (by id) into Hevy.
 	Returns status code (200 on success).
+	is_private defaults to True in dev mode, False in production.
 	"""
 	if enabled_types is None:
 		enabled_types = [at.type for at in ALL_ACTIVITY_TYPES]
+	if is_private is None:
+		is_private = not _is_production()
 
 	print("starting strava_api > import_activity()", activity_id)
 	client, session_data = _get_client()
@@ -247,7 +250,7 @@ def import_activity(activity_id, enabled_types=None):
 		"end_time": 1755910466,
 		"apple_watch": False,
 		"wearos_watch": False,
-		"is_private": not _is_production(),
+		"is_private": is_private,
 		"is_biometrics_public": True
 	  },
 	  "share_to_strava": False,
