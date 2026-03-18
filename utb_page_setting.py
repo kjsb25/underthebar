@@ -37,6 +37,7 @@ import strava_api
 import utb_prs
 
 STRAVA_SETTINGS_KEY = "strava-activity-type-filters"
+STRAVA_PRIVATE_KEY = "strava-import-private"
 
 #
 # This view provides means to adjust settings and/or interact with the Hevy API
@@ -76,6 +77,8 @@ class Setting(QWidget):
 		# Load saved activity type filter settings (default: all enabled)
 		all_types = [at.type for at in strava_api.ALL_ACTIVITY_TYPES]
 		saved_filters = session_data.get(STRAVA_SETTINGS_KEY, all_types)
+		# Load saved private setting (default: True in dev, False in production)
+		saved_private = session_data.get(STRAVA_PRIVATE_KEY, not strava_api._is_production())
 
 		# Outer layout holds the scroll area
 		pagelayout = QVBoxLayout()
@@ -180,7 +183,7 @@ class Setting(QWidget):
 		detailslayout.addLayout(stravagrid)
 
 		if not strava_api._is_production():
-			dev_warning = QLabel("⚠  DEV MODE — all imported activities will be set to private")
+			dev_warning = QLabel("⚠  DEV MODE — activities will be set to private by default")
 			dev_warning.setStyleSheet(
 				"background-color: #f5a623; color: #000; font-weight: bold;"
 				" padding: 4px 8px; border-radius: 4px;"
@@ -200,6 +203,15 @@ class Setting(QWidget):
 			filter_layout.addWidget(cb)
 		filter_layout.addStretch()
 		detailslayout.addLayout(filter_layout)
+
+		# Private activity checkbox
+		private_layout = QHBoxLayout()
+		self.strava_private_cb = QCheckBox("Set imported activity as private")
+		self.strava_private_cb.setChecked(saved_private)
+		self.strava_private_cb.stateChanged.connect(self.save_strava_private_setting)
+		private_layout.addWidget(self.strava_private_cb)
+		private_layout.addStretch()
+		detailslayout.addLayout(private_layout)
 
 		# Strava API credentials
 		self.env_path = os.path.join(self.script_folder, ".env")
@@ -279,6 +291,16 @@ class Setting(QWidget):
 			with open(session_path, 'w') as f:
 				json.dump(session_data, f)
 
+	def save_strava_private_setting(self):
+		"""Persist the private activity setting to session.json."""
+		session_path = self.utb_folder + "/session.json"
+		if os.path.exists(session_path):
+			with open(session_path, 'r') as f:
+				session_data = json.load(f)
+			session_data[STRAVA_PRIVATE_KEY] = self.strava_private_cb.isChecked()
+			with open(session_path, 'w') as f:
+				json.dump(session_data, f)
+
 	def save_strava_credentials(self):
 		cl_id = self.stravaClientIdField.text().strip()
 		cl_secret = self.stravaClientSecretField.text().strip()
@@ -340,7 +362,7 @@ class Setting(QWidget):
 				self.stravaimportbtn.setIcon(self.loadIcon(self.script_folder+"/icons/spinner-solid.svg"))
 				self.stravaimportbtn.setIconSize(QSize(24,24))
 				enabled_types = self.get_enabled_strava_types()
-				worker = StravaImportWorker(selected["id"], enabled_types)
+				worker = StravaImportWorker(selected["id"], enabled_types, self.strava_private_cb.isChecked())
 				worker.emitter.done.connect(self.on_import_done)
 				self.pool.start(worker)
 		else:
@@ -550,16 +572,17 @@ class StravaFetchWorker(QRunnable):
 class StravaImportWorker(QRunnable):
 	"""Imports a specific Strava activity into Hevy."""
 
-	def __init__(self, activity_id, enabled_types):
+	def __init__(self, activity_id, enabled_types, is_private):
 		super().__init__()
 		self.activity_id = activity_id
 		self.enabled_types = enabled_types
+		self.is_private = is_private
 		self.emitter = StravaImportEmitter()
 
 	@Slot()
 	def run(self):
 		try:
-			status = strava_api.import_activity(self.activity_id, self.enabled_types)
+			status = strava_api.import_activity(self.activity_id, self.enabled_types, self.is_private)
 			self.emitter.done.emit(status)
 		except Exception as e:
 			print("StravaImportWorker exception:", e)
