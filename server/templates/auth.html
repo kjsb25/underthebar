@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% if msg %}<div class="toast ok">{{ msg }}</div>{% endif %}
+{% if error %}<div class="toast err">{{ error }}</div>{% endif %}
+
+<section class="card">
+  <h2>Strava</h2>
+  <p>
+    Status:
+    <span class="pill {% if strava_authorized %}ok{% else %}warn{% endif %}">
+      {{ "authorized" if strava_authorized else "not authorized" }}
+    </span>
+  </p>
+  {% if not strava_has_creds %}
+    <p class="muted">Set Strava Client ID/Secret in <a href="/settings">Settings</a> first.</p>
+  {% else %}
+    <a href="/auth/strava" class="btn">
+      {{ "Re-authorize Strava" if strava_authorized else "Authorize Strava" }}
+    </a>
+    <p class="muted" style="margin-top:8px">
+      You'll be redirected to Strava to grant <code>activity:read</code>. The callback URL must match what you set in your Strava app's "Authorization Callback Domain".
+    </p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Hevy</h2>
+  <p>
+    Status:
+    <span class="pill {% if hevy_authorized %}ok{% else %}warn{% endif %}">
+      {{ "authorized" + (' as ' + hevy_username if hevy_username else '') if hevy_authorized else "not authorized" }}
+    </span>
+  </p>
+  <p class="muted">
+    Hevy has no public OAuth flow. Bootstrap by pasting your existing access &amp; refresh tokens. They're in <code>~/.underthebar/session.json</code> on whatever machine has run the desktop app.
+  </p>
+  <form method="post" action="/auth/hevy">
+    <label>Access token</label>
+    <input type="password" name="access_token" required>
+    <label>Refresh token</label>
+    <input type="password" name="refresh_token" required>
+    <label>Expires at (optional, ISO 8601)</label>
+    <input type="text" name="expires_at" placeholder="2026-05-12T13:00:00.000Z">
+    <div class="row tight" style="margin-top:8px">
+      <button type="submit">Save tokens</button>
+    </div>
+  </form>
+  {% if hevy_authorized %}
+    <form method="post" action="/auth/hevy/clear" style="margin-top:10px">
+      <button type="submit" class="danger">Clear Hevy tokens</button>
+    </form>
+  {% endif %}
+</section>
+
+{% endblock %}

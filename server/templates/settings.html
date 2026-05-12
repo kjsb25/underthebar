@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% if saved %}
+  <div class="toast ok">Saved: {{ saved }}.</div>
+{% endif %}
+
+<section class="card">
+  <h2>Polling</h2>
+  <form method="post" action="/settings/polling">
+    <div class="checkbox-row">
+      <label><input type="checkbox" name="polling_enabled" value="1" {% if polling_enabled %}checked{% endif %}> Enable auto-import</label>
+    </div>
+    <label>Poll interval (seconds, min 60)</label>
+    <input type="number" name="poll_interval_seconds" min="60" step="30" value="{{ poll_interval_seconds }}">
+    <label>Lookback when polling (hours)</label>
+    <input type="number" name="import_lookback_hours" min="1" step="1" value="{{ import_lookback_hours }}">
+    <p class="muted">Only activities started within this window are considered. Default 24h.</p>
+    <button type="submit">Save</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Activity type filters</h2>
+  <p class="muted">Mirror of the desktop checkboxes. Only matching activity types are imported.</p>
+  <form method="post" action="/settings/types">
+    <div class="checkbox-row">
+      {% for t in enabled_types %}
+        <label><input type="checkbox" name="type_{{ t.type }}" {% if t.enabled %}checked{% endif %}> {{ t.title }}</label>
+      {% endfor %}
+    </div>
+    <button type="submit">Save</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Privacy</h2>
+  <form method="post" action="/settings/private">
+    <div class="checkbox-row">
+      <label><input type="checkbox" name="import_private" value="1" {% if import_private %}checked{% endif %}> Set imported activities as private</label>
+    </div>
+    <button type="submit">Save</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Strava API credentials</h2>
+  <p class="muted">Create an app at <a href="https://www.strava.com/settings/api" target="_blank" rel="noopener">strava.com/settings/api</a>. Set the callback domain to the host this service runs on.</p>
+  <form method="post" action="/settings/strava-creds">
+    <label>Client ID</label>
+    <input type="text" name="client_id" value="{{ strava_client_id }}" placeholder="Strava Client ID">
+    <label>Client Secret</label>
+    <input type="password" name="client_secret" placeholder="{{ 'unchanged — leave blank to keep' if strava_client_secret_set else 'Strava Client Secret' }}">
+    <div class="row tight" style="margin-top:8px">
+      <button type="submit">Save</button>
+      <button type="button" class="secondary" onclick="testCreds()">Test connection</button>
+      <span id="creds-test-status" class="muted"></span>
+    </div>
+  </form>
+</section>
+
+<script>
+async function testCreds() {
+  const out = document.getElementById("creds-test-status");
+  out.textContent = "testing...";
+  const r = await fetch("/settings/strava-creds/test", {method: "POST"});
+  const data = await r.json();
+  out.textContent = data.message;
+}
+</script>
+
+{% endblock %}
