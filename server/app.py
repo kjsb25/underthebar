@@ -16,7 +16,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode
 
 from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -253,12 +253,36 @@ async def strava_auth_callback(
 @app.post("/auth/hevy")
 async def save_hevy_tokens(
     request: Request,
-    access_token: str = Form(...),
-    refresh_token: str = Form(...),
+    access_token: str = Form(""),
+    refresh_token: str = Form(""),
     expires_at: str = Form(""),
+    cookie_value: str = Form(""),
 ):
+    access_token = access_token.strip()
+    refresh_token = refresh_token.strip()
+    expires_at = expires_at.strip()
+    cookie_value = cookie_value.strip()
+
+    if cookie_value:
+        try:
+            parsed = _parse_hevy_cookie(cookie_value)
+        except ValueError as e:
+            return RedirectResponse(
+                f"/auth?error={_urlquote('Could not parse cookie value: ' + str(e))}",
+                status_code=303,
+            )
+        access_token = parsed["access_token"]
+        refresh_token = parsed["refresh_token"]
+        expires_at = parsed.get("expires_at", "") or expires_at
+
+    if not access_token or not refresh_token:
+        return RedirectResponse(
+            f"/auth?error={_urlquote('Provide either the auth2.0-token cookie value, or both access and refresh tokens.')}",
+            status_code=303,
+        )
+
     hevy: HevyClient = request.app.state.hevy
-    hevy.set_tokens(access_token.strip(), refresh_token.strip(), expires_at.strip() or None)
+    hevy.set_tokens(access_token, refresh_token, expires_at or None)
     try:
         hevy.account()  # fetches and caches user_id/username
         msg = "Hevy+tokens+saved+and+verified"
@@ -268,6 +292,30 @@ async def save_hevy_tokens(
             status_code=303,
         )
     return RedirectResponse(f"/auth?msg={msg}", status_code=303)
+
+
+def _parse_hevy_cookie(raw: str) -> dict:
+    """Accepts the auth2.0-token cookie value in any of these forms:
+      - URL-encoded JSON (what's stored in the cookie itself)
+      - Decoded JSON (what DevTools often shows)
+      - Either form wrapped in surrounding quotes
+    Returns a dict with at least access_token and refresh_token.
+    """
+    candidate = raw.strip().strip('"').strip("'")
+    errors = []
+    for attempt in (candidate, unquote(candidate)):
+        try:
+            data = json.loads(attempt)
+        except json.JSONDecodeError as e:
+            errors.append(str(e))
+            continue
+        if not isinstance(data, dict):
+            errors.append("cookie value is not a JSON object")
+            continue
+        if not data.get("access_token") or not data.get("refresh_token"):
+            raise ValueError("cookie JSON is missing access_token or refresh_token")
+        return data
+    raise ValueError("not valid JSON (tried raw and URL-decoded): " + "; ".join(errors))
 
 
 @app.post("/auth/hevy/clear")

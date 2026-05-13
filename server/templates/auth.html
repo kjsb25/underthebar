@@ -33,16 +33,53 @@
     </span>
   </p>
   <p class="muted">
-    Hevy has no public OAuth flow. Bootstrap by pasting your existing access &amp; refresh tokens. They're in <code>~/.underthebar/session.json</code> on whatever machine has run the desktop app.
+    Hevy has no public OAuth flow, so you have to bootstrap by handing this app a session you've already
+    created in your browser. Easiest path: copy the <code>auth2.0-token</code> cookie out of a logged-in
+    hevy.com tab and paste it below.
   </p>
+
+  <details style="margin: 8px 0 12px; border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px;">
+    <summary style="cursor: pointer; color: var(--muted);">Step-by-step: get the cookie from your browser</summary>
+    <ol style="margin: 8px 0 4px; padding-left: 20px; line-height: 1.7;">
+      <li>Open <a href="https://hevy.com" target="_blank" rel="noopener">hevy.com</a> in a desktop browser and sign in.</li>
+      <li>Open DevTools:
+        <ul style="margin: 4px 0;">
+          <li>Chrome / Edge / Brave: <code>F12</code> or <code>Ctrl/Cmd+Shift+I</code>, then <strong>Application</strong> tab → <strong>Storage</strong> → <strong>Cookies</strong> → <code>https://hevy.com</code>.</li>
+          <li>Firefox: <code>F12</code>, then <strong>Storage</strong> tab → <strong>Cookies</strong> → <code>https://hevy.com</code>.</li>
+          <li>Safari: enable Develop menu (Settings → Advanced → Show features for web developers), then <strong>Develop → Show Web Inspector → Storage → Cookies</strong>.</li>
+        </ul>
+      </li>
+      <li>Find the row named <code>auth2.0-token</code>. The value looks like
+        <code>%7B%22access_token%22%3A%22…</code> (URL-encoded JSON).</li>
+      <li>Click the value to select it, copy it, and paste it into the <strong>Cookie value</strong> field below. We'll decode it for you.</li>
+      <li>Hit <strong>Save tokens</strong>. If it worked, the status pill above will flip to "authorized as &lt;your name&gt;".</li>
+    </ol>
+    <p class="muted" style="margin: 8px 0 0; font-size: 0.85rem;">
+      The cookie is bearer credentials — anyone with it can act as you on Hevy until it expires. Don't share it,
+      and clear it from any shared machine when you're done.
+    </p>
+  </details>
+
   <form method="post" action="/auth/hevy">
-    <label>Access token</label>
-    <input type="password" name="access_token" required>
-    <label>Refresh token</label>
-    <input type="password" name="refresh_token" required>
-    <label>Expires at (optional, ISO 8601)</label>
-    <input type="text" name="expires_at" placeholder="2026-05-12T13:00:00.000Z">
-    <div class="row tight" style="margin-top:8px">
+    <label>Cookie value <span class="muted" style="font-weight: normal;">(paste the <code>auth2.0-token</code> value)</span></label>
+    <input type="password" name="cookie_value" placeholder="%7B%22access_token%22%3A%22...%22%2C%22refresh_token%22%3A%22...%22%7D">
+
+    <details style="margin: 12px 0 4px;">
+      <summary style="cursor: pointer; color: var(--muted); font-size: 0.9rem;">Advanced: paste tokens individually</summary>
+      <p class="muted" style="margin: 8px 0; font-size: 0.85rem;">
+        Use this if you already have the decoded tokens — e.g. from <code>~/.underthebar/session.json</code> on a
+        machine that's run the desktop app, or because you've decoded the cookie yourself. Leave the cookie value
+        field above blank when using these.
+      </p>
+      <label>Access token</label>
+      <input type="password" name="access_token">
+      <label>Refresh token</label>
+      <input type="password" name="refresh_token">
+      <label>Expires at (optional, ISO 8601)</label>
+      <input type="text" name="expires_at" placeholder="2026-05-12T13:00:00.000Z">
+    </details>
+
+    <div class="row tight" style="margin-top:12px">
       <button type="submit">Save tokens</button>
     </div>
   </form>
