@@ -61,6 +61,17 @@ class State:
                     imported_at TEXT NOT NULL,
                     hevy_workout_id TEXT
                 );
+                CREATE TABLE IF NOT EXISTS merged_workouts (
+                    strava_activity_id TEXT NOT NULL,
+                    hevy_workout_id TEXT NOT NULL,
+                    merged_at TEXT NOT NULL,
+                    confidence REAL NOT NULL CHECK (confidence BETWEEN 0 AND 1),
+                    source TEXT NOT NULL DEFAULT 'auto'
+                        CHECK (source IN ('auto', 'user')),
+                    PRIMARY KEY (strava_activity_id, hevy_workout_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_merged_hevy
+                    ON merged_workouts(hevy_workout_id);
                 CREATE TABLE IF NOT EXISTS log_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ts TEXT NOT NULL,
@@ -195,6 +206,110 @@ class State:
                 (_today_iso(),),
             ).fetchone()[0]
         return {"total": total, "today": today}
+
+    # ── Merged workout tracking ───────────────────────────────────────────
+    def is_merged(self, strava_activity_id: str, hevy_workout_id: str) -> bool:
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT 1 FROM merged_workouts "
+                "WHERE strava_activity_id=? AND hevy_workout_id=?",
+                (str(strava_activity_id), str(hevy_workout_id)),
+            ).fetchone()
+            return row is not None
+
+    def mark_merged(
+        self,
+        strava_activity_id: str,
+        hevy_workout_id: str,
+        confidence: float,
+        source: str = "auto",
+    ):
+        """Record a Strava→Hevy merge. A 'user' source is sticky: once a user
+        has explicitly confirmed a merge, a later automated rematch cannot
+        silently downgrade it back to 'auto'. The auto path can still update
+        confidence on an existing auto row."""
+        with self._lock, self._conn() as c:
+            c.execute(
+                "INSERT INTO merged_workouts "
+                "(strava_activity_id, hevy_workout_id, merged_at, confidence, source) "
+                "VALUES(?, ?, ?, ?, ?) "
+                "ON CONFLICT(strava_activity_id, hevy_workout_id) DO UPDATE SET "
+                "    merged_at = excluded.merged_at, "
+                "    confidence = excluded.confidence, "
+                "    source = CASE "
+                "        WHEN merged_workouts.source = 'user' THEN 'user' "
+                "        ELSE excluded.source "
+                "    END",
+                (
+                    str(strava_activity_id),
+                    str(hevy_workout_id),
+                    _now_iso(),
+                    float(confidence),
+                    source,
+                ),
+            )
+
+    def unmerge(self, strava_activity_id: str, hevy_workout_id: str) -> int:
+        """Remove a merge record. Returns the number of rows deleted."""
+        with self._lock, self._conn() as c:
+            cursor = c.execute(
+                "DELETE FROM merged_workouts "
+                "WHERE strava_activity_id=? AND hevy_workout_id=?",
+                (str(strava_activity_id), str(hevy_workout_id)),
+            )
+            return cursor.rowcount
+
+    def merges_for_hevy(self, hevy_workout_id: str) -> list[dict]:
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT strava_activity_id, merged_at, confidence, source "
+                "FROM merged_workouts WHERE hevy_workout_id=? ORDER BY merged_at DESC",
+                (str(hevy_workout_id),),
+            ).fetchall()
+        return [
+            {
+                "strava_activity_id": r[0],
+                "merged_at": r[1],
+                "confidence": r[2],
+                "source": r[3],
+            }
+            for r in rows
+        ]
+
+    def merges_for_strava(self, strava_activity_id: str) -> list[dict]:
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT hevy_workout_id, merged_at, confidence, source "
+                "FROM merged_workouts WHERE strava_activity_id=? ORDER BY merged_at DESC",
+                (str(strava_activity_id),),
+            ).fetchall()
+        return [
+            {
+                "hevy_workout_id": r[0],
+                "merged_at": r[1],
+                "confidence": r[2],
+                "source": r[3],
+            }
+            for r in rows
+        ]
+
+    def recent_merges(self, limit: int = 20) -> list[dict]:
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT strava_activity_id, hevy_workout_id, merged_at, confidence, source "
+                "FROM merged_workouts ORDER BY merged_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "strava_activity_id": r[0],
+                "hevy_workout_id": r[1],
+                "merged_at": r[2],
+                "confidence": r[3],
+                "source": r[4],
+            }
+            for r in rows
+        ]
 
     # ── Event log ─────────────────────────────────────────────────────────
     def log(self, level: str, message: str):
