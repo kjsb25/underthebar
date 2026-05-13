@@ -1,0 +1,54 @@
+# Strava → Hevy always-on import service.
+#
+# Deploy from the host (this container's docker socket is read-only):
+#   $ ./nova.sh up strava-hevy
+#
+# Required environment (set in stack .env or override here):
+#   PUBLIC_HOST           e.g. strava.example.com (Traefik routing host)
+#   PUBLIC_BASE_URL       e.g. https://strava.example.com (used for OAuth callback)
+#   TRAEFIK_AUTH_USER     basic-auth htpasswd entry (user:hash) — handled by Traefik middleware
+#
+# Auth is enforced by Traefik basic-auth middleware (config in your Traefik stack).
+# This container holds Hevy refresh tokens — do not expose it without auth.
+
+services:
+  strava-hevy:
+    build: .
+    image: strava-hevy:local
+    container_name: strava-hevy
+    restart: unless-stopped
+    environment:
+      DATA_DIR: /data
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+    volumes:
+      - strava-hevy-data:/data
+    networks:
+      - traefik
+    read_only: true
+    tmpfs:
+      - /tmp:size=16M,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "traefik"
+      traefik.http.routers.strava-hevy.rule: "Host(`${PUBLIC_HOST}`)"
+      traefik.http.routers.strava-hevy.entrypoints: "websecure"
+      traefik.http.routers.strava-hevy.tls: "true"
+      traefik.http.routers.strava-hevy.tls.certresolver: "letsencrypt"
+      traefik.http.routers.strava-hevy.middlewares: "strava-hevy-auth@docker"
+      # Basic-auth middleware. TRAEFIK_AUTH_USER must be `user:hashed-password`
+      # (generate with: htpasswd -nbB user 'password'). Dollar signs need to be
+      # doubled in compose-interpolated values.
+      traefik.http.middlewares.strava-hevy-auth.basicauth.users: "${TRAEFIK_AUTH_USER}"
+      traefik.http.services.strava-hevy.loadbalancer.server.port: "8000"
+
+volumes:
+  strava-hevy-data:
+
+networks:
+  traefik:
+    external: true

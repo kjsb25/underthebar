@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% if not strava_authorized or not hevy_authorized %}
+  <div class="toast err">
+    Setup not complete —
+    {% if not strava_authorized %}Strava{% endif %}
+    {% if not strava_authorized and not hevy_authorized %} and {% endif %}
+    {% if not hevy_authorized %}Hevy{% endif %}
+    not authorized. Go to <a href="/auth">Auth</a>.
+  </div>
+{% endif %}
+
+<section class="card">
+  <h2>Status</h2>
+  <div class="grid">
+    <div class="stat">
+      <div class="label">Polling</div>
+      <div class="value">{{ "on" if polling_enabled else "off" }}</div>
+      <div class="muted">{{ poll_interval_seconds }}s interval</div>
+    </div>
+    <div class="stat">
+      <div class="label">Last poll</div>
+      <div class="value" style="font-size:1rem">{{ last_poll_at }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">Imported today</div>
+      <div class="value">{{ counts.today }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">Imported total</div>
+      <div class="value">{{ counts.total }}</div>
+    </div>
+  </div>
+  <div style="margin-top:12px" class="row tight">
+    <button id="sync-btn" onclick="syncNow()">Sync now</button>
+    <span id="sync-status" class="muted"></span>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Manual import</h2>
+  <p class="muted">Same flow as the desktop activity picker — fetches recent matching activities and lets you import one.</p>
+  <div class="row tight">
+    <button onclick="loadActivities()">Refresh list</button>
+    <span id="activities-status" class="muted"></span>
+  </div>
+  <div id="activities-list" style="margin-top:8px"></div>
+</section>
+
+<section class="card">
+  <h2>Recent imports</h2>
+  {% if recent_imports %}
+    <table>
+      <thead><tr><th>When</th><th>Type</th><th>Name</th><th>Strava ID</th></tr></thead>
+      <tbody>
+        {% for r in recent_imports %}
+          <tr>
+            <td class="muted">{{ r.imported_at }}</td>
+            <td>{{ r.activity_type }}</td>
+            <td>{{ r.activity_name }}</td>
+            <td class="muted">{{ r.strava_activity_id }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Nothing imported yet.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Recent log</h2>
+  <div class="log">
+    {% for entry in recent_logs %}
+      <div><span class="muted">{{ entry.ts }}</span> <span class="{{ entry.level }}">{{ entry.level }}</span> {{ entry.message }}</div>
+    {% else %}
+      <div class="muted">No log entries.</div>
+    {% endfor %}
+  </div>
+</section>
+
+<script>
+async function syncNow() {
+  const btn = document.getElementById("sync-btn");
+  const out = document.getElementById("sync-status");
+  btn.disabled = true; out.textContent = "syncing...";
+  try {
+    const r = await fetch("/api/sync", {method: "POST"});
+    const data = await r.json();
+    const imp = data.imported.length, err = data.errors.length;
+    out.textContent = `imported ${imp}, errors ${err}`;
+    if (imp > 0 || err > 0) setTimeout(() => location.reload(), 800);
+  } catch (e) {
+    out.textContent = "error: " + e;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function loadActivities() {
+  const out = document.getElementById("activities-status");
+  const list = document.getElementById("activities-list");
+  out.textContent = "fetching...";
+  list.innerHTML = "";
+  try {
+    const r = await fetch("/api/activities?limit=10");
+    if (!r.ok) { out.textContent = "error: " + r.status + " " + await r.text(); return; }
+    const data = await r.json();
+    if (data.activities.length === 0) {
+      list.innerHTML = '<p class="muted">No matching activities found.</p>';
+      out.textContent = "";
+      return;
+    }
+    list.innerHTML = data.activities.map(a => `
+      <div class="activity">
+        <div class="meta">
+          <div class="name">${escapeHtml(a.name)} <span class="muted">(${a.type_title})</span></div>
+          <div class="sub">${a.start_date} · ${(a.distance/1000).toFixed(2)} km · ${Math.round(a.moving_time/60)} min</div>
+        </div>
+        ${a.already_imported
+          ? '<span class="pill ok">imported</span>'
+          : `<button onclick="importActivity('${a.id}', this)">Import</button>`}
+      </div>
+    `).join("");
+    out.textContent = "";
+  } catch (e) {
+    out.textContent = "error: " + e;
+  }
+}
+
+async function importActivity(id, btn) {
+  btn.disabled = true; btn.textContent = "importing...";
+  try {
+    const r = await fetch(`/api/import/${id}`, {method: "POST"});
+    if (r.ok) {
+      btn.outerHTML = '<span class="pill ok">imported</span>';
+      setTimeout(() => location.reload(), 600);
+    } else {
+      btn.disabled = false; btn.textContent = "Import";
+      alert("failed: " + r.status + " " + await r.text());
+    }
+  } catch (e) {
+    btn.disabled = false; btn.textContent = "Import";
+    alert("error: " + e);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+</script>
+
+{% endblock %}
