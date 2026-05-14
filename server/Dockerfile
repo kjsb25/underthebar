@@ -18,7 +18,9 @@ RUN groupadd --system --gid 1000 app \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py state.py strava_client.py hevy_client.py poller.py ./
+COPY app.py state.py strava_client.py hevy_client.py poller.py \
+     matcher.py canonical.py provider.py strava_provider.py \
+     hevy_provider.py backfill.py ./
 COPY templates/ ./templates/
 
 RUN mkdir -p /data && chown -R app:app /app /data
