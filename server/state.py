@@ -72,6 +72,68 @@ class State:
                 );
                 CREATE INDEX IF NOT EXISTS idx_merged_hevy
                     ON merged_workouts(hevy_workout_id);
+
+                /*
+                 * Canonical activities and provider links — the hub-and-spoke
+                 * model documented in PROVIDER_ARCHITECTURE.md.
+                 *
+                 * `canonical_activities` is the merged truth for one
+                 * real-world training session. `fields_json` carries the
+                 * FieldValue-wrapped scalars (title, description, …) and
+                 * `samples_json` carries HR / power sample arrays with
+                 * lineage. JSON columns are deliberate (see §8.2 of the
+                 * design doc): we always load a canonical as a whole and
+                 * never query "all canonicals where title.source = X".
+                 */
+                CREATE TABLE IF NOT EXISTS canonical_activities (
+                    id              TEXT PRIMARY KEY,
+                    activity_type   TEXT NOT NULL,
+                    start_ts        INTEGER NOT NULL,
+                    end_ts          INTEGER,
+                    fields_json     TEXT NOT NULL,
+                    samples_json    TEXT NOT NULL,
+                    created_at      TEXT NOT NULL,
+                    updated_at      TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_canonical_start
+                    ON canonical_activities(start_ts);
+
+                /*
+                 * One row per (provider, external activity). Multiple rows
+                 * may share a `canonical_id` when one canonical session
+                 * appears as several external activities in one provider
+                 * — brick workouts on Strava are the canonical case.
+                 * That's why there is NO UNIQUE (canonical_id, provider).
+                 *
+                 * `link_source` values:
+                 *   'auto'     — matcher above auto_merge threshold
+                 *   'user'     — explicit user confirmation (sticky)
+                 *   'origin'   — recognized via Provider.origin_link
+                 *   'backfill' — created by the one-shot migration from
+                 *                imported_activities / merged_workouts
+                 */
+                CREATE TABLE IF NOT EXISTS provider_links (
+                    canonical_id        TEXT NOT NULL,
+                    provider            TEXT NOT NULL,
+                    external_id         TEXT NOT NULL,
+                    role                TEXT,
+                    segment_label       TEXT,
+                    confidence          REAL NOT NULL
+                        CHECK (confidence BETWEEN 0 AND 1),
+                    link_source         TEXT NOT NULL
+                        CHECK (link_source IN ('auto','user','origin','backfill')),
+                    last_pulled_at      TEXT,
+                    last_pushed_at      TEXT,
+                    last_push_hash      TEXT,
+                    external_etag       TEXT,
+                    skip_pulls_until    INTEGER,
+                    PRIMARY KEY (provider, external_id),
+                    FOREIGN KEY (canonical_id)
+                        REFERENCES canonical_activities(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_provider_links_canonical
+                    ON provider_links(canonical_id);
+
                 CREATE TABLE IF NOT EXISTS log_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ts TEXT NOT NULL,
@@ -311,6 +373,224 @@ class State:
             for r in rows
         ]
 
+    # ── Canonical activities + provider links ─────────────────────────────
+    #
+    # The accessors below are the only code in the project that reads or
+    # writes the new hub-and-spoke tables. The legacy `imported_activities`
+    # and `merged_workouts` accessors above remain in place; the two
+    # systems coexist for the duration of the migration (see
+    # PROVIDER_ARCHITECTURE.md §9). Backfill from old to new lives in
+    # backfill.py; no code in this module reads the legacy tables.
+
+    def upsert_canonical(self, canonical_json: dict) -> None:
+        """Insert or replace a canonical activity. Accepts the dict
+        produced by `CanonicalActivity.to_jsonable()`.
+
+        `canonical.py` is intentionally not imported here — `state.py`
+        works only with serialized dicts so the storage layer doesn't
+        depend on the model layer. The caller serializes; we persist.
+        """
+        with self._lock, self._conn() as c:
+            c.execute(
+                "INSERT INTO canonical_activities "
+                "(id, activity_type, start_ts, end_ts, fields_json, "
+                " samples_json, created_at, updated_at) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET "
+                "    activity_type = excluded.activity_type, "
+                "    start_ts      = excluded.start_ts, "
+                "    end_ts        = excluded.end_ts, "
+                "    fields_json   = excluded.fields_json, "
+                "    samples_json  = excluded.samples_json, "
+                "    updated_at    = excluded.updated_at",
+                (
+                    str(canonical_json["id"]),
+                    str(canonical_json["activity_type"]),
+                    int(canonical_json["start_ts"]),
+                    (
+                        int(canonical_json["end_ts"])
+                        if canonical_json.get("end_ts") is not None
+                        else None
+                    ),
+                    json.dumps(canonical_json.get("fields", {})),
+                    json.dumps(canonical_json.get("samples", {})),
+                    _epoch_to_iso(canonical_json.get("created_at", 0)),
+                    _epoch_to_iso(canonical_json.get("updated_at", 0)),
+                ),
+            )
+
+    def get_canonical(self, canonical_id: str) -> dict | None:
+        """Return the dict for a canonical, or None if not found. The
+        dict round-trips through `CanonicalActivity.from_jsonable`."""
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT id, activity_type, start_ts, end_ts, fields_json, "
+                "samples_json, created_at, updated_at "
+                "FROM canonical_activities WHERE id=?",
+                (str(canonical_id),),
+            ).fetchone()
+        if row is None:
+            return None
+        return _row_to_canonical_dict(row)
+
+    def canonicals_in_window(
+        self, start_ts: int, end_ts: int
+    ) -> list[dict]:
+        """Return canonicals whose `start_ts` falls inside [start_ts, end_ts].
+
+        Used by the matcher integration to find candidates for an
+        incoming external activity. The orchestrator widens the window
+        per provider needs (e.g. ±24h for cross-day workouts).
+        """
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT id, activity_type, start_ts, end_ts, fields_json, "
+                "samples_json, created_at, updated_at "
+                "FROM canonical_activities "
+                "WHERE start_ts BETWEEN ? AND ? "
+                "ORDER BY start_ts ASC",
+                (int(start_ts), int(end_ts)),
+            ).fetchall()
+        return [_row_to_canonical_dict(r) for r in rows]
+
+    def delete_canonical(self, canonical_id: str) -> int:
+        """Remove a canonical and all its links. Returns rows deleted
+        from `canonical_activities` (links go via FK cascade)."""
+        with self._lock, self._conn() as c:
+            cursor = c.execute(
+                "DELETE FROM canonical_activities WHERE id=?",
+                (str(canonical_id),),
+            )
+            return cursor.rowcount
+
+    def link_external(
+        self,
+        canonical_id: str,
+        provider: str,
+        external_id: str,
+        *,
+        confidence: float,
+        link_source: str,
+        role: str | None = None,
+        segment_label: str | None = None,
+    ) -> None:
+        """Create or update a provider_links row.
+
+        `link_source` of `'user'` is sticky in the same way that
+        `merged_workouts.source` is on the legacy table: an existing
+        user link cannot be downgraded to 'auto' by a subsequent
+        automated rematch. The other link sources can be overwritten
+        freely (auto can update auto, origin can update origin, etc).
+        """
+        if link_source not in ("auto", "user", "origin", "backfill"):
+            raise ValueError(f"invalid link_source: {link_source!r}")
+        with self._lock, self._conn() as c:
+            c.execute(
+                "INSERT INTO provider_links "
+                "(canonical_id, provider, external_id, role, segment_label, "
+                " confidence, link_source) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(provider, external_id) DO UPDATE SET "
+                "    canonical_id   = excluded.canonical_id, "
+                "    role           = excluded.role, "
+                "    segment_label  = excluded.segment_label, "
+                "    confidence     = excluded.confidence, "
+                "    link_source    = CASE "
+                "        WHEN provider_links.link_source = 'user' THEN 'user' "
+                "        ELSE excluded.link_source "
+                "    END",
+                (
+                    str(canonical_id),
+                    str(provider),
+                    str(external_id),
+                    role,
+                    segment_label,
+                    float(confidence),
+                    link_source,
+                ),
+            )
+
+    def unlink_external(self, provider: str, external_id: str) -> int:
+        """Remove a single link by (provider, external_id). Returns rows
+        deleted. Does NOT delete the canonical even if this was its only
+        link — deciding when a stranded canonical should be removed is
+        a policy question the orchestrator owns."""
+        with self._lock, self._conn() as c:
+            cursor = c.execute(
+                "DELETE FROM provider_links "
+                "WHERE provider=? AND external_id=?",
+                (str(provider), str(external_id)),
+            )
+            return cursor.rowcount
+
+    def lookup_link(
+        self, provider: str, external_id: str
+    ) -> dict | None:
+        """Return the link row for a given (provider, external_id), or None."""
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT canonical_id, provider, external_id, role, "
+                "segment_label, confidence, link_source, last_pulled_at, "
+                "last_pushed_at, last_push_hash, external_etag, "
+                "skip_pulls_until "
+                "FROM provider_links WHERE provider=? AND external_id=?",
+                (str(provider), str(external_id)),
+            ).fetchone()
+        return _row_to_link_dict(row) if row else None
+
+    def links_for_canonical(self, canonical_id: str) -> list[dict]:
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT canonical_id, provider, external_id, role, "
+                "segment_label, confidence, link_source, last_pulled_at, "
+                "last_pushed_at, last_push_hash, external_etag, "
+                "skip_pulls_until "
+                "FROM provider_links WHERE canonical_id=? "
+                "ORDER BY provider ASC, external_id ASC",
+                (str(canonical_id),),
+            ).fetchall()
+        return [_row_to_link_dict(r) for r in rows]
+
+    def mark_link_pulled(
+        self, provider: str, external_id: str, etag: str | None = None
+    ) -> None:
+        """Update timestamps after a successful pull. The orchestrator
+        calls this once per (provider, external_id) per poll cycle."""
+        with self._lock, self._conn() as c:
+            c.execute(
+                "UPDATE provider_links SET last_pulled_at=?, external_etag=? "
+                "WHERE provider=? AND external_id=?",
+                (_now_iso(), etag, str(provider), str(external_id)),
+            )
+
+    def mark_link_pushed(
+        self,
+        provider: str,
+        external_id: str,
+        push_hash: str,
+        skip_pulls_for_seconds: int = 60,
+    ) -> None:
+        """Update timestamps and the skip-pulls window after a successful
+        push. `push_hash` is the hash of the writable subset of the
+        canonical at the moment of the write — used as the dedupe key
+        the next time we consider a pull from this provider. The
+        skip-pulls window is the second guard against echo loops
+        (PROVIDER_ARCHITECTURE.md §7)."""
+        now = int(datetime.now(timezone.utc).timestamp())
+        with self._lock, self._conn() as c:
+            c.execute(
+                "UPDATE provider_links SET "
+                "  last_pushed_at=?, last_push_hash=?, skip_pulls_until=? "
+                "WHERE provider=? AND external_id=?",
+                (
+                    _now_iso(),
+                    str(push_hash),
+                    now + max(0, int(skip_pulls_for_seconds)),
+                    str(provider),
+                    str(external_id),
+                ),
+            )
+
     # ── Event log ─────────────────────────────────────────────────────────
     def log(self, level: str, message: str):
         with self._lock, self._conn() as c:
@@ -340,6 +620,64 @@ def _now_iso() -> str:
 def _today_iso() -> str:
     now = datetime.now(timezone.utc)
     return now.strftime("%Y-%m-%dT00:00:00Z")
+
+
+def _epoch_to_iso(epoch: int) -> str:
+    """Convert an int epoch second into an ISO-8601 UTC string. Used by
+    the canonical-activities accessors so the on-disk timestamp format
+    stays consistent with the rest of the tables in this DB."""
+    if not epoch:
+        return _now_iso()
+    return datetime.fromtimestamp(int(epoch), tz=timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+
+
+def _iso_to_epoch(iso: str | None) -> int:
+    if not iso:
+        return 0
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except ValueError:
+        return 0
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp())
+
+
+def _row_to_canonical_dict(row) -> dict:
+    """Convert a canonical_activities SELECT row tuple into the dict
+    shape that `CanonicalActivity.from_jsonable` expects."""
+    return {
+        "id": row[0],
+        "activity_type": row[1],
+        "start_ts": row[2],
+        "end_ts": row[3],
+        "fields": json.loads(row[4]),
+        "samples": json.loads(row[5]),
+        "created_at": _iso_to_epoch(row[6]),
+        "updated_at": _iso_to_epoch(row[7]),
+    }
+
+
+def _row_to_link_dict(row) -> dict:
+    """Convert a provider_links SELECT row tuple into a dict. The column
+    order must match the SELECT lists in `lookup_link` and
+    `links_for_canonical` — if you change one, change both."""
+    return {
+        "canonical_id": row[0],
+        "provider": row[1],
+        "external_id": row[2],
+        "role": row[3],
+        "segment_label": row[4],
+        "confidence": row[5],
+        "link_source": row[6],
+        "last_pulled_at": row[7],
+        "last_pushed_at": row[8],
+        "last_push_hash": row[9],
+        "external_etag": row[10],
+        "skip_pulls_until": row[11],
+    }
 
 
 def build_state() -> State:
