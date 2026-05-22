@@ -14,6 +14,137 @@
 
 ---
 
+## 0. The flow at a glance
+
+A plain-language walkthrough before we dive into the model. Read this
+first; the rest of the document is reference material organized by
+component.
+
+### 0.1 The mental model in one paragraph
+
+Every real-world training session has **one canonical record** in our
+database. Each external service (Strava, Hevy, …) that has a copy of
+that same session gets a **link row** pointing at the canonical. When a
+provider sends us data, we translate it into a **patch** of typed
+fields, each tagged with who said it and when, and we merge the patch
+into the canonical using **per-field rules** (e.g. "Hevy wins for
+titles, Strava wins for distance"). When we push the canonical back
+out, the same rules tell us what each provider is allowed to receive.
+
+### 0.2 What happens to one workout, in order
+
+Pretend you just finished a run. You logged it in Hevy from your phone;
+your watch pushed the GPS / HR track to Strava. The system is going to
+notice both and stitch them together.
+
+1. **Pull.** A scheduled tick asks every provider, "anything new in
+   the last hour?" Strava returns the run; Hevy returns the workout.
+   Each one is wrapped in an `ExternalActivity` (envelope: provider
+   name, external id, start time, raw payload).
+
+2. **Origin check.** Before matching, the orchestrator asks each
+   provider, "is this a copy of something from another provider?" If
+   the Hevy workout carries a `strava_activity_local_time` marker
+   (which means Hevy imported it from a Strava activity), or the
+   Strava activity has an `external_id` starting with `hevy-…` (which
+   means Hevy pushed it to Strava), we already know they're the same
+   session — no matching needed. We just create or update the link.
+
+3. **Match.** If no origin marker, we hand the activity to the existing
+   matcher (`MATCHING_DESIGN.md`). The matcher scores candidate
+   canonicals within a time window and returns either a high-confidence
+   match, a "looks like X but ask the user" partial match, or nothing.
+
+4. **Canonical decision.**
+   - Match found → reuse that canonical, add a link for this provider.
+   - No match → create a fresh canonical, link this provider as its
+     first spoke.
+
+5. **Translate inbound.** The provider calls `to_canonical(ext)` and
+   returns a `CanonicalPatch` — a bag of `FieldValue`s like
+   `title = FieldValue("Morning run", source="strava", set_at=…)` plus
+   any HR / power samples it knows about, each sample stamped with its
+   own lineage `(source_provider, source_external_id, timestamp_ms)`.
+
+6. **Merge.** `apply_patch(canonical, patch)` walks each field. For
+   each one it consults a tiny **policy table** (e.g. `title` →
+   `PreferProvider("hevy")`, `distance_meters` →
+   `PREFER_SPECIFIC_OVER_NULL`) and decides whether the incoming value
+   overwrites the existing one. Samples are unioned, never overwritten.
+   The user's locks always win.
+
+7. **Push (out of scope for the spike).** The orchestrator looks at
+   each link and asks, "did the canonical change in a way this provider
+   can accept?" Strava can accept new titles but not new HR streams;
+   Hevy can accept additional HR samples but not GPS data. Each
+   capable provider gets a `CanonicalPatch` of just the bits it cares
+   about and translates that into its own API.
+
+### 0.3 Why each piece exists (one line each)
+
+- **CanonicalActivity** — the merged truth for one session. The only
+  thing the UI / writer should ever read.
+- **FieldValue** — wraps a scalar with `(source, set_at, locked)` so
+  merge decisions don't need extra columns or join tables.
+- **HRSample / PowerSample** — carries per-sample lineage so a brick
+  workout (one canonical, two Strava activities) can dedupe correctly
+  on re-pull without losing legs.
+- **CanonicalPatch** — the only object that crosses provider
+  boundaries. Providers never see a `CanonicalActivity` whole; they
+  only see/produce patches.
+- **MergePolicy / PreferProvider** — declarative table of who wins.
+  Adding a new field is a one-line policy entry, not a new branch.
+- **Provider Protocol** — what every provider must implement. Six
+  methods, declared via `typing.Protocol` so nothing has to inherit.
+- **ProviderCaps** — what a provider can read, what it can write, and
+  whether it can list activities by date range. Lets the orchestrator
+  make capability-aware decisions without if/else trees per provider.
+- **provider_links table** — `(provider, external_id) → canonical_id`
+  plus push/pull bookkeeping (etag, last push hash, skip-pulls
+  window). One row per external copy.
+- **canonical_activities table** — the canonical record, serialized as
+  JSON columns for forward-compat (see §8.2).
+- **Backfill** — one-shot migration that translates today's
+  `imported_activities` / `merged_workouts` into canonicals + links so
+  the new tables aren't empty when the orchestrator ships.
+
+### 0.4 How the loop-prevention story fits in
+
+A naive design would push a canonical out to Hevy, Hevy would echo
+that change back on the next pull, we'd re-merge it as if it were new,
+push it back to Hevy, … forever. Three guards stop this:
+
+1. **Provenance shortcut.** If the incoming patch has the same
+   `(source, value)` as what we already have, the patch is a no-op.
+2. **Last push hash.** After we push to a provider, we record a hash
+   of what we sent. If the next pull from that provider produces a
+   matching hash, we skip it.
+3. **Skip-pulls window.** After a push, we ignore pulls from that
+   provider for a short window (default 60s) because most APIs are
+   eventually-consistent and will hand us back our own write.
+
+See §7 for the full state machine.
+
+### 0.5 What the spike PR actually delivers vs. defers
+
+The spike is **structural**: model + tables + providers + backfill +
+tests. The pieces that make user-visible changes are deliberately
+deferred:
+
+| Done in spike | Deferred |
+|---|---|
+| Canonical model + merge policies | Orchestrator loop (the thing that calls everything in order) |
+| Provider Protocol + Strava/Hevy wrappers | `update()` methods (writing back out) |
+| Tables + accessors + backfill | Local Hevy mirror (Hevy has no list-by-date API) |
+| Origin-marker detection | Per-sample HR additive merge writer |
+
+Nothing in this PR runs on a schedule yet. The legacy poller keeps
+running unchanged; the new tables are populated by backfill but no
+code reads from them in production paths. This is intentional — the
+spike establishes the shape so the follow-up PRs can be small.
+
+---
+
 ## 1. Problem we're solving
 
 A user logs the same training session into **many** services:
