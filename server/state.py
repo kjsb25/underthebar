@@ -23,6 +23,13 @@ DEFAULTS = {
     "polling_enabled": "0",
     "poll_interval_seconds": "600",
     "import_lookback_hours": "24",
+    # Auto-collapse Strava duplicates (same type, overlapping or ≤15-min gap):
+    # pick a survivor, mute the loser, prefix loser title. Default on.
+    "strava_merge_duplicates": "1",
+    # Loser gap window in seconds. Two activities of the same type are
+    # considered duplicates if their intervals overlap or the time between
+    # the end of one and the start of the next is ≤ this value.
+    "strava_merge_gap_seconds": "900",
 }
 
 LOG_RETAIN_ROWS = 500
@@ -72,6 +79,14 @@ class State:
                 );
                 CREATE INDEX IF NOT EXISTS idx_merged_hevy
                     ON merged_workouts(hevy_workout_id);
+                CREATE TABLE IF NOT EXISTS merged_strava_activities (
+                    loser_id TEXT PRIMARY KEY,
+                    survivor_id TEXT NOT NULL,
+                    merged_at TEXT NOT NULL,
+                    original_title TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_merged_strava_survivor
+                    ON merged_strava_activities(survivor_id);
                 CREATE TABLE IF NOT EXISTS log_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ts TEXT NOT NULL,
@@ -307,6 +322,66 @@ class State:
                 "merged_at": r[2],
                 "confidence": r[3],
                 "source": r[4],
+            }
+            for r in rows
+        ]
+
+    # ── Strava duplicate tracking ─────────────────────────────────────────
+    def is_strava_loser(self, activity_id: str) -> bool:
+        """True if this Strava activity was absorbed into another. Losers
+        are skipped on subsequent polls so we don't import them or try to
+        re-merge them."""
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT 1 FROM merged_strava_activities WHERE loser_id=?",
+                (str(activity_id),),
+            ).fetchone()
+            return row is not None
+
+    def mark_strava_loser(
+        self,
+        loser_id: str,
+        survivor_id: str,
+        original_title: str,
+    ):
+        """Record that `loser_id` was merged into `survivor_id`. INSERT OR
+        IGNORE so a re-run of the same merge is a no-op — the first record
+        is the authoritative one (original_title would otherwise drift if a
+        later poll saw the already-prefixed title)."""
+        with self._lock, self._conn() as c:
+            c.execute(
+                "INSERT OR IGNORE INTO merged_strava_activities "
+                "(loser_id, survivor_id, merged_at, original_title) "
+                "VALUES(?, ?, ?, ?)",
+                (
+                    str(loser_id),
+                    str(survivor_id),
+                    _now_iso(),
+                    original_title or "",
+                ),
+            )
+
+    def get_strava_survivor(self, loser_id: str) -> str | None:
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT survivor_id FROM merged_strava_activities WHERE loser_id=?",
+                (str(loser_id),),
+            ).fetchone()
+            return row[0] if row else None
+
+    def recent_strava_merges(self, limit: int = 20) -> list[dict]:
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT loser_id, survivor_id, merged_at, original_title "
+                "FROM merged_strava_activities ORDER BY merged_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "loser_id": r[0],
+                "survivor_id": r[1],
+                "merged_at": r[2],
+                "original_title": r[3],
             }
             for r in rows
         ]
