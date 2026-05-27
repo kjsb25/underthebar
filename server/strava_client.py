@@ -51,7 +51,12 @@ class StravaError(Exception):
 class StravaClient:
     """Strava operations wrapped around a State for persistent tokens."""
 
-    SCOPES = ["activity:read"]
+    # activity:write is needed for the duplicate-merge feature (PUT
+    # title/hide_from_home on the loser). Existing users authorized before
+    # this change have read-only tokens; writes will 401 until they re-auth,
+    # which update_activity surfaces as a clear StravaError.
+    SCOPES = ["activity:read", "activity:write"]
+    API_BASE = "https://www.strava.com/api/v3"
 
     def __init__(self, state: State):
         self.state = state
@@ -154,6 +159,10 @@ class StravaClient:
         for activity in activities:
             for at in submittable:
                 if at.matches(activity.type):
+                    # has_gps drives the duplicate-merge survivor pick. A
+                    # populated start_latlng means Strava actually recorded
+                    # a track; treadmill/manual entries have None.
+                    has_gps = bool(getattr(activity, "start_latlng", None))
                     matching.append(
                         {
                             "id": str(activity.id),
@@ -163,12 +172,54 @@ class StravaClient:
                             "start_date": _iso(activity.start_date),
                             "distance": float(activity.distance) if activity.distance else 0,
                             "moving_time": int(activity.moving_time) if activity.moving_time else 0,
+                            "has_gps": has_gps,
                         }
                     )
                     break
             if len(matching) >= limit:
                 break
         return matching
+
+    # ── Activity mutation (requires activity:write scope) ─────────────────
+    def update_activity(
+        self,
+        activity_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        hide_from_home: bool | None = None,
+    ) -> None:
+        """PUT mutable fields on a Strava activity. No-op when no fields
+        are passed. Raises StravaError on 401 (missing write scope —
+        user needs to re-auth) or any other non-200.
+        """
+        payload: dict[str, Any] = {}
+        if name is not None:
+            payload["name"] = name
+        if description is not None:
+            payload["description"] = description
+        if hide_from_home is not None:
+            payload["hide_from_home"] = bool(hide_from_home)
+        if not payload:
+            return
+
+        access_token = self._refresh_if_needed()
+        resp = requests.put(
+            f"{self.API_BASE}/activities/{activity_id}",
+            json=payload,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=15,
+        )
+        if resp.status_code == 401:
+            raise StravaError(
+                "Strava update unauthorized — reconnect Strava to grant the "
+                "activity:write scope"
+            )
+        if resp.status_code != 200:
+            raise StravaError(
+                f"Strava update failed ({activity_id}): HTTP {resp.status_code} "
+                f"{resp.text[:200]}"
+            )
 
     def build_hevy_workout(
         self,

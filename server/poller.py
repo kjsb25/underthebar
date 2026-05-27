@@ -7,6 +7,12 @@ import logging
 import time
 from datetime import datetime, timezone
 
+from duplicate_detector import (
+    DEFAULT_GAP_SECONDS,
+    find_duplicate_groups,
+    loser_title,
+    pick_survivor,
+)
 from hevy_client import HevyClient, HevyError
 from state import State
 from strava_client import StravaClient, StravaError
@@ -87,6 +93,7 @@ class Poller:
             "ran_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "imported": [],
             "skipped": [],
+            "merged_duplicates": [],
             "errors": [],
         }
         self.state.set("last_poll_at", result["ran_at"])
@@ -113,8 +120,20 @@ class Poller:
             result["errors"].append(str(e))
             return result
 
+        # Drop activities we've already absorbed into a survivor in an
+        # earlier poll — they shouldn't be imported and shouldn't be
+        # re-merged. Done before the duplicate sweep so a loser doesn't
+        # pull a fresh activity into its old group.
+        activities = [
+            a for a in activities if not self.state.is_strava_loser(a["id"])
+        ]
+
+        merged_loser_ids = self._merge_strava_duplicates(activities, result)
+
         is_private = self.state.get_bool("import_private")
         for a in activities:
+            if a["id"] in merged_loser_ids:
+                continue
             if self.state.is_imported(a["id"]):
                 result["skipped"].append(a["id"])
                 continue
@@ -141,8 +160,82 @@ class Poller:
                 self.state.log("ERROR", msg)
                 result["errors"].append(msg)
 
-        if not result["imported"] and not result["errors"]:
+        if (
+            not result["imported"]
+            and not result["errors"]
+            and not result["merged_duplicates"]
+        ):
             self.state.log(
                 "INFO", f"Poll ({triggered_by}) — no new activities"
             )
         return result
+
+    def _merge_strava_duplicates(
+        self, activities: list[dict], result: dict
+    ) -> set[str]:
+        """Collapse same-type, overlapping/adjacent Strava activities.
+
+        Picks a survivor per group (best GPS → most distance → longest →
+        earliest), then PUTs `hide_from_home=True` and a `[merged]` title
+        prefix on each loser via Strava's update endpoint. The survivor
+        is intentionally left alone — the user keeps the recording they
+        actually care about, unmodified.
+
+        Records each successful loser in `merged_strava_activities` so
+        future polls skip it. Returns the set of loser ids to filter out
+        of the import loop for *this* poll.
+
+        Failures are logged and the loser is left unrecorded; the next
+        poll will see the same group and retry. The `loser_title` helper
+        is idempotent so retry is safe even if the title already got
+        prefixed before a state write failed."""
+        loser_ids: set[str] = set()
+        if not self.state.get_bool("strava_merge_duplicates", default=True):
+            return loser_ids
+
+        gap = self.state.get_int(
+            "strava_merge_gap_seconds", DEFAULT_GAP_SECONDS
+        )
+        groups = find_duplicate_groups(activities, gap_seconds=gap)
+        if not groups:
+            return loser_ids
+
+        for group in groups:
+            survivor = pick_survivor(group)
+            for loser in group:
+                if loser["id"] == survivor["id"]:
+                    continue
+                try:
+                    new_title = loser_title(loser.get("name"))
+                    self.strava.update_activity(
+                        loser["id"],
+                        name=new_title,
+                        hide_from_home=True,
+                    )
+                except StravaError as e:
+                    msg = (
+                        f"Strava duplicate-merge failed for {loser['id']} "
+                        f"(would merge into {survivor['id']}): {e}"
+                    )
+                    self.state.log("WARN", msg)
+                    result["errors"].append(msg)
+                    continue
+
+                self.state.mark_strava_loser(
+                    loser["id"], survivor["id"], loser.get("name") or ""
+                )
+                loser_ids.add(loser["id"])
+                summary = {
+                    "loser_id": loser["id"],
+                    "loser_name": loser.get("name") or "",
+                    "survivor_id": survivor["id"],
+                    "survivor_name": survivor.get("name") or "",
+                }
+                result["merged_duplicates"].append(summary)
+                self.state.log(
+                    "INFO",
+                    f"Merged duplicate {loser['type']} {loser['id']} "
+                    f"'{loser.get('name')}' → {survivor['id']} "
+                    f"'{survivor.get('name')}'",
+                )
+        return loser_ids
