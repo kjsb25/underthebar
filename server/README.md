@@ -1,4 +1,6 @@
-# Strava → Hevy Always-On Import Service
+# Under the Bar — Web Service
+
+Always-on Strava → Hevy import service.
 
 A small FastAPI service that polls Strava every N minutes and auto-imports
 matching activities into Hevy. Mirrors the desktop app's Strava import

@@ -1,4 +1,4 @@
-# Strava → Hevy always-on import service.
+# Under the Bar — always-on Strava → Hevy import service.
 #
 # Deploy from the host (this container's docker socket is read-only):
 #   $ ./nova.sh up strava-hevy

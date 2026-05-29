@@ -1,4 +1,4 @@
-"""FastAPI app for the always-on Strava → Hevy import service.
+"""FastAPI app for Under the Bar — always-on Strava → Hevy import service.
 
 Routes group:
   /              home (landing page with placeholders mirroring the desktop main window)
@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
         state.log("INFO", "Service stopping")
 
 
-app = FastAPI(title="Strava → Hevy Import Service", lifespan=lifespan)
+app = FastAPI(title="Under the Bar", lifespan=lifespan)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -88,7 +88,7 @@ def _ctx(request: Request, **extra) -> dict:
         )
     base = {
         "request": request,
-        "title": "Strava → Hevy",
+        "title": "Under the Bar",
         "strava_authorized": strava.is_authorized(),
         "strava_has_creds": strava.has_credentials(),
         "hevy_authorized": hevy.is_authorized(),
