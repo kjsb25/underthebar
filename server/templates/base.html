@@ -62,6 +62,13 @@
     .pill.ok { background: var(--ok); color: white; }
     .pill.warn { background: var(--warn); color: black; }
     .pill.err { background: var(--err); color: white; }
+    .pill.neutral { background: #3a3a3a; color: var(--muted); border: 1px solid var(--border); }
+    section.card.placeholder { opacity: 0.85; }
+    section.card.placeholder h2 .pill { margin-left: 8px; vertical-align: middle; text-transform: none; letter-spacing: 0; }
+    .hero { text-align: center; padding: 8px 0 16px; }
+    .hero .lockup { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 1.1rem; letter-spacing: 0.05em; }
+    .hero .name { font-size: 1.6rem; font-weight: 700; letter-spacing: 0.15em; }
+    .hero .tag { color: var(--muted); font-size: 0.8rem; margin-top: 4px; }
     .muted { color: var(--muted); }
     .grid {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;
@@ -99,7 +106,8 @@
   <header>
     <h1>Strava → Hevy</h1>
     <nav>
-      <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Dashboard</a>
+      <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Home</a>
+      <a href="/import" class="{% if request.url.path == '/import' %}active{% endif %}">Import</a>
       <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">Settings</a>
       <a href="/auth" class="{% if request.url.path == '/auth' %}active{% endif %}">Auth</a>
     </nav>

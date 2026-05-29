@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block content %}
+
+<section class="card">
+  <div class="hero">
+    <div class="lockup">═|██══ <span class="name">UNDER THE BAR</span> ══██|═</div>
+    <div class="tag">powered by Hevy</div>
+  </div>
+</section>
+
+{% if not strava_authorized or not hevy_authorized %}
+  <div class="toast err">
+    Setup not complete —
+    {% if not strava_authorized %}Strava{% endif %}
+    {% if not strava_authorized and not hevy_authorized %} and {% endif %}
+    {% if not hevy_authorized %}Hevy{% endif %}
+    not authorized. Go to <a href="/auth">Auth</a>.
+  </div>
+{% endif %}
+
+<section class="card">
+  <h2>At a glance</h2>
+  <div class="grid">
+    <div class="stat">
+      <div class="label">Polling</div>
+      <div class="value">{{ "on" if polling_enabled else "off" }}</div>
+      <div class="muted">{{ poll_interval_seconds }}s interval</div>
+    </div>
+    <div class="stat">
+      <div class="label">Last poll</div>
+      <div class="value" style="font-size:1rem">{{ last_poll_at }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">Imported today</div>
+      <div class="value">{{ counts.today }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">Imported total</div>
+      <div class="value">{{ counts.total }}</div>
+    </div>
+  </div>
+</section>
+
+<section class="card placeholder">
+  <h2>Profile <span class="pill neutral">not yet on web</span></h2>
+  <p class="muted">
+    On the desktop app, Profile shows your Hevy account snapshot, a calendar
+    heat map of training days, a recent activity feed, and body-measure
+    trends. Porting this is tracked in the main-page plan.
+  </p>
+</section>
+
+<section class="card placeholder">
+  <h2>Routines <span class="pill neutral">not yet on web</span></h2>
+  <p class="muted">
+    Routine viewer / JSON editor with Garmin <code>.fit</code> → Hevy routine
+    import. Lives in <code>utb_page_routines.py</code> on desktop.
+  </p>
+</section>
+
+<section class="card placeholder">
+  <h2>Analysis <span class="pill neutral">not yet on web</span></h2>
+  <p class="muted">
+    The plots library: estimated 1RM, rep maxes, big-three progress, weekly /
+    monthly volume, body-part splits, Wilks, cumulative distance and reps.
+    Currently rendered with matplotlib in <code>utb_plot_*.py</code>.
+  </p>
+</section>
+
+<section class="card placeholder">
+  <h2>Social <span class="pill neutral">not yet on web</span></h2>
+  <p class="muted">
+    Friends list and social feed — forked from Profile on desktop, see
+    <code>utb_page_social.py</code>.
+  </p>
+</section>
+
+<section class="card">
+  <h2>Strava → Hevy import</h2>
+  <p class="muted">
+    Auto-imports matching Strava activities into Hevy on a polling schedule,
+    with a manual sync + activity picker for one-offs. This is the only piece
+    of Under The Bar fully running on the web today.
+  </p>
+  {% if recent_imports %}
+    <table>
+      <thead><tr><th>When</th><th>Type</th><th>Name</th></tr></thead>
+      <tbody>
+        {% for r in recent_imports %}
+          <tr>
+            <td class="muted">{{ r.imported_at }}</td>
+            <td>{{ r.activity_type }}</td>
+            <td>{{ r.activity_name }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Nothing imported yet.</p>
+  {% endif %}
+  <div class="row tight" style="margin-top:12px">
+    <a href="/import" class="btn">Open import dashboard</a>
+  </div>
+</section>
+
+{% endblock %}

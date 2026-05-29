@@ -93,7 +93,8 @@ cycle when the interval has elapsed.
 
 | Route | Purpose |
 |---|---|
-| `GET /` | Dashboard: status, manual sync, manual import picker, recent imports, recent log |
+| `GET /` | Home: hero, status, placeholder cards for the other desktop pages, link to the import dashboard |
+| `GET /import` | Import dashboard: status, manual sync, manual import picker, recent imports, recent log |
 | `GET /settings` | All toggles + credentials |
 | `GET /auth` | Strava OAuth and Hevy token paste |
 | `GET /auth/strava` → `GET /auth/strava/callback` | OAuth flow |
