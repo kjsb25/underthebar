@@ -1,10 +1,11 @@
 """FastAPI app for the always-on Strava → Hevy import service.
 
 Routes group:
-  /              dashboard (status, recent imports, manual import picker)
+  /              home (landing page with placeholders mirroring the desktop main window)
+  /import        import dashboard (status, recent imports, manual import picker)
   /settings      filters, private toggle, polling interval, creds
   /auth          Strava OAuth bootstrap + Hevy token paste
-  /api/*         JSON endpoints used by the dashboard
+  /api/*         JSON endpoints used by the import dashboard
   /healthz       liveness
 """
 
@@ -114,7 +115,14 @@ def _strava_redirect_uri(request: Request) -> str:
 
 # ── Pages ─────────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
+async def home(request: Request):
+    s: State = request.app.state.state
+    ctx = _ctx(request, recent_imports=s.recent_imports(3))
+    return templates.TemplateResponse("home.html", ctx)
+
+
+@app.get("/import", response_class=HTMLResponse)
+async def import_dashboard(request: Request):
     s: State = request.app.state.state
     ctx = _ctx(
         request,
