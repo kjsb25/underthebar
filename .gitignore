@@ -10,3 +10,7 @@ underthebar.spec
 .env
 
 venv/
+
+.venv/
+
+server/data/
