@@ -51,6 +51,22 @@ Runtime settings (managed via the web UI, stored in SQLite):
 - Strava client ID / secret
 - Strava + Hevy auth tokens
 
+## Local development (vibe-kanban)
+
+The repo has a vibe-kanban dev server script that bootstraps a
+`uv`-managed `.venv` under `server/` and runs uvicorn with `--reload`.
+
+- **Port** is derived from `VK_WORKSPACE_ID` (first 4 hex chars of the
+  UUID, mod 1000, plus 8000 — so each workspace gets a stable port in
+  `8000-8999` and concurrent workspaces don't collide).
+- **Access** is via vibe-kanban's built-in path proxy on the main UI
+  port: `https://<vibe-kanban-host>/api/preview/<port>/`. The dev
+  server script echoes the full URL on startup.
+- The "Open dev server" button in the vibe-kanban UI hardcodes
+  `localhost` and only works when accessing vibe-kanban locally; use
+  the `/api/preview/<port>/` URL for remote access.
+- `server/.venv/` and `server/data/` (SQLite for dev) are gitignored.
+
 ## Bootstrap (one-time)
 
 ### 1. Strava
