@@ -59,6 +59,7 @@ DEFAULT_TYPE_TEMPLATE_IDS: dict[str, set[str]] = {
     "Ride": {"D8F7F851"},
     "Walk": {"33EDD7DB"},
     "Hike": {"1C34A172"},
+    "StairStepper": {"4377A52B"},
     "VirtualRide": {
         "D8F7F851",
         "89f3ed93-5418-4cc6-a114-0590f2977ae8",
