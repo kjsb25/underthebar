@@ -35,6 +35,7 @@ ALL_ACTIVITY_TYPES: list[ActivityType] = [
     ActivityType("Ride", "Cycling", "D8F7F851"),
     ActivityType("Walk", "Walking", "33EDD7DB"),
     ActivityType("Hike", "Hiking", "1C34A172"),
+    ActivityType("StairStepper", "Stair Machine", "4377A52B"),
 ]
 
 # Optional: matches the per-user VirtualRide alias from strava_api.py.

@@ -18,7 +18,7 @@ from typing import Any, Iterable
 
 
 DEFAULTS = {
-    "enabled_types": '["Run", "Ride", "Walk", "Hike"]',
+    "enabled_types": '["Run", "Ride", "Walk", "Hike", "StairStepper"]',
     "import_private": "0",
     "polling_enabled": "0",
     "poll_interval_seconds": "600",

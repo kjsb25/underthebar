@@ -86,6 +86,7 @@ ALL_ACTIVITY_TYPES = [
 	ActivityType("Ride", "Cycling", "D8F7F851"),
 	ActivityType("Walk", "Walking", "33EDD7DB"),
 	ActivityType("Hike", "Hiking", "1C34A172"),
+	ActivityType("StairStepper", "Stair Machine", "4377A52B"),
 ]
 
 
